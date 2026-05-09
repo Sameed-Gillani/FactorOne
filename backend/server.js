@@ -5,15 +5,20 @@ dotenv.config();
 
 const app = require('./app');
 const connectDB = require('./config/db');
+const seedMockData = require('./utils/seedData');
 
 const PORT = process.env.PORT || 5000;
 const NODE_ENV = process.env.NODE_ENV || 'development';
 
-// ── Connect to MongoDB, then start HTTP server ───────────────
 const startServer = async () => {
   try {
+    // 1. Connect to MongoDB
     await connectDB();
 
+    // 2. Seed mock FBR + CreditScore data (idempotent — safe every restart)
+    await seedMockData();
+
+    // 3. Start HTTP server
     const server = app.listen(PORT, () => {
       console.log(`\n🚀  FactorOne API running in ${NODE_ENV} mode on port ${PORT}`);
       console.log(`📍  Base URL : http://localhost:${PORT}/api`);
@@ -32,7 +37,6 @@ const startServer = async () => {
     process.on('SIGTERM', () => shutdown('SIGTERM'));
     process.on('SIGINT', () => shutdown('SIGINT'));
 
-    // ── Unhandled promise rejections ─────────────────────────
     process.on('unhandledRejection', (reason, promise) => {
       console.error('💥  Unhandled Rejection at:', promise, 'reason:', reason);
       server.close(() => process.exit(1));

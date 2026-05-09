@@ -8,6 +8,7 @@ const path = require('path');
 
 const { notFound, errorHandler } = require('./middlewares/errorMiddleware');
 const authRoutes = require('./routes/authRoutes');
+const invoiceRoutes = require('./routes/invoiceRoutes');
 
 const app = express();
 
@@ -22,7 +23,6 @@ const allowedOrigins = process.env.ALLOWED_ORIGINS
 app.use(
   cors({
     origin: (origin, callback) => {
-      // Allow requests with no origin (mobile apps, curl, Postman)
       if (!origin) return callback(null, true);
       if (allowedOrigins.includes(origin)) return callback(null, true);
       callback(new Error(`CORS policy: origin '${origin}' is not allowed.`));
@@ -47,32 +47,26 @@ app.use(mongoSanitize());
 
 // ── Global rate limiter ──────────────────────────────────────
 const globalLimiter = rateLimit({
-  windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS, 10) || 15 * 60 * 1000, // 15 min
+  windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS, 10) || 15 * 60 * 1000,
   max: parseInt(process.env.RATE_LIMIT_MAX, 10) || 100,
   standardHeaders: true,
   legacyHeaders: false,
-  message: {
-    success: false,
-    message: 'Too many requests from this IP, please try again later.',
-  },
+  message: { success: false, message: 'Too many requests from this IP, please try again later.' },
 });
 app.use('/api', globalLimiter);
 
-// ── Auth-specific (tighter) rate limiter ─────────────────────
+// ── Auth-specific rate limiter ────────────────────────────────
 const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 min
+  windowMs: 15 * 60 * 1000,
   max: 20,
   standardHeaders: true,
   legacyHeaders: false,
-  message: {
-    success: false,
-    message: 'Too many authentication attempts. Please try again in 15 minutes.',
-  },
+  message: { success: false, message: 'Too many authentication attempts. Please try again in 15 minutes.' },
 });
 app.use('/api/auth/login', authLimiter);
 app.use('/api/auth/register', authLimiter);
 
-// ── Static files (uploaded documents) ────────────────────────
+// ── Static files ──────────────────────────────────────────────
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // ── Health check ─────────────────────────────────────────────
@@ -87,11 +81,12 @@ app.get('/api/health', (req, res) => {
 
 // ── API Routes ────────────────────────────────────────────────
 app.use('/api/auth', authRoutes);
+app.use('/api/invoices', invoiceRoutes);
 
 // ── 404 handler ──────────────────────────────────────────────
 app.use(notFound);
 
-// ── Global error handler (must be last) ──────────────────────
+// ── Global error handler ──────────────────────────────────────
 app.use(errorHandler);
 
 module.exports = app;
