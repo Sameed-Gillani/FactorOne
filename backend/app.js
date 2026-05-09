@@ -9,6 +9,8 @@ const path = require('path');
 const { notFound, errorHandler } = require('./middlewares/errorMiddleware');
 const authRoutes = require('./routes/authRoutes');
 const invoiceRoutes = require('./routes/invoiceRoutes');
+const investmentRoutes = require('./routes/investmentRoutes');
+const walletRoutes = require('./routes/walletRoutes');
 
 const app = express();
 
@@ -76,12 +78,32 @@ app.get('/api/health', (req, res) => {
     message: 'FactorOne API is running.',
     environment: process.env.NODE_ENV || 'development',
     timestamp: new Date().toISOString(),
+    routes: [
+      'POST   /api/auth/register',
+      'POST   /api/auth/login',
+      'GET    /api/auth/me',
+      'POST   /api/invoices',
+      'GET    /api/invoices/my',
+      'GET    /api/invoices',
+      'GET    /api/invoices/:id',
+      'PATCH  /api/invoices/:id/approve',
+      'PATCH  /api/invoices/:id/reject',
+      'GET    /api/invoices/:id/fbr-check',
+      'GET    /api/invoices/:id/credit-check',
+      'POST   /api/investments',
+      'GET    /api/investments/my',
+      'GET    /api/wallet',
+      'POST   /api/wallet/topup',
+      'POST   /api/wallet/withdraw',
+    ],
   });
 });
 
 // ── API Routes ────────────────────────────────────────────────
 app.use('/api/auth', authRoutes);
 app.use('/api/invoices', invoiceRoutes);
+app.use('/api/investments', investmentRoutes);
+app.use('/api/wallet', walletRoutes);
 
 // ── 404 handler ──────────────────────────────────────────────
 app.use(notFound);
