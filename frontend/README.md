@@ -1,59 +1,75 @@
-# FactorOne — Investor Pages
+# FactorOne – Wallet & Notifications Pages
 
-## Files Included
+## Files
 
-```
-src/pages/investor/
-├── InvestorDashboard.js   — Dashboard with stats, investments table, monthly bar chart
-├── Marketplace.js         — Invoice marketplace with sector/duration filters, 3-col card grid
-├── InvoiceDetail.js       — Full invoice detail + Yield Calculator + Invest modal
-└── MyInvestments.js       — Full investments table with sort, filter, export
-```
+| File | Destination in your project |
+|------|------------------------------|
+| `src/pages/shared/WalletPage.js` | `src/pages/shared/WalletPage.js` |
+| `src/pages/shared/NotificationsPage.js` | `src/pages/shared/NotificationsPage.js` |
+| `src/components/Navbar.js` | `src/components/Navbar.js` |
 
-## Dependencies
+## Setup
 
-All pages use packages already common in React apps:
-- `react-router-dom` — navigation (`useNavigate`, `useParams`)
-- `recharts` — bar chart in InvestorDashboard
-- `lucide-react` — icons throughout
+1. Copy files into your React project at the paths above.
 
-Install if not present:
-```bash
-npm install react-router-dom recharts lucide-react
-```
-
-## Routing Setup
-
-Add these routes to your existing router (e.g. `src/App.js`):
-
+2. Add routes in your router (React Router v6 example):
 ```jsx
-import InvestorDashboard from "./pages/investor/InvestorDashboard";
-import Marketplace       from "./pages/investor/Marketplace";
-import InvoiceDetail     from "./pages/investor/InvoiceDetail";
-import MyInvestments     from "./pages/investor/MyInvestments";
+import WalletPage from "./pages/shared/WalletPage";
+import NotificationsPage from "./pages/shared/NotificationsPage";
 
-// Inside your <Routes>:
-<Route path="/investor/dashboard"          element={<InvestorDashboard />} />
-<Route path="/investor/marketplace"        element={<Marketplace />} />
-<Route path="/investor/invoice/:id"        element={<InvoiceDetail />} />
-<Route path="/investor/my-investments"     element={<MyInvestments />} />
+<Route path="/wallet" element={<WalletPage />} />
+<Route path="/notifications" element={<NotificationsPage />} />
 ```
 
-## API Endpoints Expected
+3. Make sure `REACT_APP_API_URL` is set in your `.env` (or leave blank for same-origin):
+```
+REACT_APP_API_URL=https://your-api-domain.com
+```
 
-| Method | Endpoint            | Used In                        |
-|--------|---------------------|--------------------------------|
-| GET    | /api/invoices       | Marketplace (with ?sector=&duration= query params) |
-| GET    | /api/invoices/:id   | InvoiceDetail                  |
-| POST   | /api/investments    | InvoiceDetail (confirm invest) |
-| GET    | /api/investments    | MyInvestments                  |
+4. Auth token must be stored in `localStorage` under key `"token"`.
+   User object (with `role`, `firstName`, `lastName`, `email`) stored under `"user"`.
 
-All pages fall back to built-in mock data when the API is unavailable,
-so they work out-of-the-box without a backend.
+## API Endpoints Used
 
-## Theme
+### WalletPage
+| Method | Endpoint | Body |
+|--------|----------|------|
+| GET | `/api/wallet` | — |
+| GET | `/api/wallet/transactions?page=&limit=` | — |
+| POST | `/api/wallet/topup` | `{ amount: number }` |
+| POST | `/api/wallet/withdraw` | `{ amount: number }` |
 
-Matches FactorOne dark theme:
-- Background: `#0f172a`
-- Cards:       `#1e293b`
-- Accent:      `#3b82f6`
+### NotificationsPage
+| Method | Endpoint | Body |
+|--------|----------|------|
+| GET | `/api/notifications?page=&limit=&type=` | — |
+| PUT | `/api/notifications/read-all` | — |
+| PUT | `/api/notifications/:id/read` | — |
+
+### Navbar (polling)
+| Method | Endpoint |
+|--------|----------|
+| GET | `/api/notifications/unread-count` |
+
+Expected response: `{ count: number }` or `{ unreadCount: number }`
+
+## Transaction Types & Colors
+
+| Type | Color |
+|------|-------|
+| `topup` | 🟢 Green |
+| `investment` | 🔴 Red |
+| `disbursement` | 🔵 Blue |
+| `withdrawal` | 🟠 Orange |
+
+## Notification Types & Colors
+
+| Type | Color |
+|------|-------|
+| `transaction` | 🟢 Green |
+| `system` | 🔵 Blue |
+| `approval` | 🟡 Amber |
+
+## Role-based Navbar Links
+
+Edit the `NAV_LINKS` object in `Navbar.js` to adjust navigation per role (`admin`, `investor`, `borrower`).
