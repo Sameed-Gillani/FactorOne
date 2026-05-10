@@ -1,76 +1,72 @@
-import axios from "axios";
+import axios from 'axios';
 
-// ── Axios instance ────────────────────────────────────────────
-const api = axios.create({
-  baseURL: process.env.REACT_APP_API_URL || "http://localhost:5000/api",
-  timeout: 15000,
-  headers: { "Content-Type": "application/json" },
+const API = axios.create({
+  baseURL: process.env.REACT_APP_API_URL || 'http://localhost:5000/api'
 });
 
-// ── Request interceptor: attach JWT from localStorage ─────────
-api.interceptors.request.use(
-  (config) => {
-    const token = localStorage.getItem("fo_token");
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
-    }
-    return config;
-  },
-  (error) => Promise.reject(error)
-);
+API.interceptors.request.use((req) => {
+  const token = localStorage.getItem('token');
+  if (token) req.headers.Authorization = `Bearer ${token}`;
+  return req;
+});
 
-// ── Response interceptor: handle 401 globally ─────────────────
-api.interceptors.response.use(
+API.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response?.status === 401) {
-      // Token expired or invalid — clear storage
-      localStorage.removeItem("fo_token");
-      localStorage.removeItem("fo_user");
-      // Only redirect if not already on an auth page
-      if (!window.location.pathname.startsWith("/login") &&
-          !window.location.pathname.startsWith("/register")) {
-        window.location.href = "/login";
-      }
+      localStorage.removeItem('token');
+      window.location.href = '/login';
     }
     return Promise.reject(error);
   }
 );
 
-// ── Auth API ──────────────────────────────────────────────────
+// Auth
 export const authAPI = {
-  register: (data) => api.post("/auth/register", data),
-  login: (credentials) => api.post("/auth/login", credentials),
-  getMe: () => api.get("/auth/me"),
+  register: (data) => API.post('/auth/register', data),
+  login: (data) => API.post('/auth/login', data),
+  getMe: () => API.get('/auth/me'),
+  updateProfile: (data) => API.put('/auth/profile', data),
 };
 
-// ── Invoice API ───────────────────────────────────────────────
+// Invoices
 export const invoiceAPI = {
-  submit: (formData) =>
-    api.post("/invoices", formData, {
-      headers: { "Content-Type": "multipart/form-data" },
-    }),
-  getMyInvoices: (params) => api.get("/invoices/my", { params }),
-  getAllVerified: (params) => api.get("/invoices", { params }),
-  getById: (id) => api.get(`/invoices/${id}`),
-  getAllAdmin: (params) => api.get("/invoices/admin/all", { params }),
-  approve: (id, data) => api.patch(`/invoices/${id}/approve`, data),
-  reject: (id, data) => api.patch(`/invoices/${id}/reject`, data),
-  fbrCheck: (id) => api.get(`/invoices/${id}/fbr-check`),
-  creditCheck: (id) => api.get(`/invoices/${id}/credit-check`),
+  submit: (data) => API.post('/invoices', data),
+  getMy: () => API.get('/invoices/my'),
+  getAll: (params) => API.get('/invoices', { params }),
+  getById: (id) => API.get(`/invoices/${id}`),
+  approve: (id, data) => API.patch(`/invoices/${id}/approve`, data),
+  reject: (id, data) => API.patch(`/invoices/${id}/reject`, data),
+  fbrCheck: (id) => API.get(`/invoices/${id}/fbr-check`),
+  creditCheck: (id) => API.get(`/invoices/${id}/credit-check`),
 };
 
-// ── Investment API ────────────────────────────────────────────
+// Investments
 export const investmentAPI = {
-  place: (data) => api.post("/investments", data),
-  getMyInvestments: (params) => api.get("/investments/my", { params }),
+  place: (data) => API.post('/investments', data),
+  getMy: () => API.get('/investments/my'),
 };
 
-// ── Wallet API ────────────────────────────────────────────────
+// Wallet
 export const walletAPI = {
-  getWallet: (params) => api.get("/wallet", { params }),
-  topUp: (data) => api.post("/wallet/topup", data),
-  withdraw: (data) => api.post("/wallet/withdraw", data),
+  get: () => API.get('/wallet'),
+  topup: (data) => API.post('/wallet/topup', data),
+  withdraw: (data) => API.post('/wallet/withdraw', data),
 };
 
-export default api;
+// Notifications
+export const notificationAPI = {
+  getAll: () => API.get('/notifications'),
+  markAllRead: () => API.put('/notifications/read-all'),
+};
+
+// Admin
+export const adminAPI = {
+  getUsers: (params) => API.get('/admin/users', { params }),
+  activateUser: (id) => API.patch(`/admin/users/${id}/activate`),
+  blockUser: (id) => API.patch(`/admin/users/${id}/block`),
+  getInvoices: (params) => API.get('/admin/invoices', { params }),
+  getStats: () => API.get('/admin/stats'),
+};
+
+export default API;
