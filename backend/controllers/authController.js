@@ -1,257 +1,268 @@
-const { validationResult } = require('express-validator');
-const User = require('../models/User');
-const Wallet = require('../models/Wallet');
-const Notification = require('../models/Notification');
-const { generateToken } = require('../utils/generateToken');
+const jwt = require("jsonwebtoken");
+const User = require("../models/User");
 
-// ── Helper: format validation errors ─────────────────────────
-const formatValidationErrors = (errors) =>
-  errors.array().map((e) => ({ field: e.path, message: e.msg }));
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
-// ─────────────────────────────────────────────────────────────
-// @route   POST /api/auth/register
-// @desc    Register a new user (SME, Investor) & auto-create wallet
-// @access  Public
-// ─────────────────────────────────────────────────────────────
-const register = async (req, res, next) => {
+function generateToken(userId, role) {
+  return jwt.sign(
+    { id: userId, role },
+    process.env.JWT_SECRET,
+    { expiresIn: process.env.JWT_EXPIRES_IN || "7d" }
+  );
+}
+
+function formatLockTime(lockUntil) {
+  const ms = lockUntil - Date.now();
+  if (ms <= 0) return "shortly";
+  const totalSeconds = Math.ceil(ms / 1000);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  if (minutes > 0 && seconds > 0) return `${minutes} minute${minutes !== 1 ? "s" : ""} and ${seconds} second${seconds !== 1 ? "s" : ""}`;
+  if (minutes > 0) return `${minutes} minute${minutes !== 1 ? "s" : ""}`;
+  return `${seconds} second${seconds !== 1 ? "s" : ""}`;
+}
+
+// ─── Register ─────────────────────────────────────────────────────────────────
+exports.register = async (req, res) => {
   try {
-    // 1. Validate request body
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(422).json({
+    const { firstName, lastName, email, password, role } = req.body;
+
+    if (!firstName || !lastName || !email || !password) {
+      return res.status(400).json({
         success: false,
-        message: 'Validation failed',
-        errors: formatValidationErrors(errors),
+        message: "First name, last name, email, and password are required.",
       });
     }
 
-    const { name, email, password, phone, cnic, role, businessName, ntn, city } = req.body;
-
-    // 2. Prevent duplicate email / cnic
-    const existingUser = await User.findOne({ $or: [{ email }, { cnic }] });
-    if (existingUser) {
-      const field = existingUser.email === email ? 'email' : 'CNIC';
+    // Check for existing user
+    const existing = await User.findOne({ email: email.toLowerCase().trim() });
+    if (existing) {
       return res.status(409).json({
         success: false,
-        message: `An account with this ${field} already exists.`,
+        message: "An account with this email already exists.",
       });
     }
 
-    // 3. Build user object (only include role-specific fields)
-    const userData = { name, email, password, phone, cnic, role };
+    // Prevent self-assigning admin role
+    const assignedRole = ["investor", "borrower"].includes(role) ? role : "investor";
 
-    if (role === 'sme') {
-      userData.businessName = businessName;
-      userData.ntn = ntn;
-    }
-
-    if (role === 'investor') {
-      userData.city = city;
-    }
-
-    // 4. Create user (password hashed via pre-save hook)
-    const user = await User.create(userData);
-
-    // 5. Auto-create wallet for new user
-    await Wallet.create({ user: user._id });
-
-    // 6. Send welcome notification
-    await Notification.send({
-      recipient: user._id,
-      title: 'Welcome to FactorOne!',
-      message: `Hi ${user.name}, your account has been created and is pending admin review. You will be notified once approved.`,
-      type: 'account_approved',
+    const user = await User.create({
+      firstName,
+      lastName,
+      email,
+      password,
+      role: assignedRole,
     });
 
-    // 7. Generate token
-    const token = generateToken(user);
+    const token = generateToken(user._id, user.role);
 
-    // 8. Return sanitised user data
     return res.status(201).json({
       success: true,
-      message: 'Account created successfully. Awaiting admin approval.',
+      message: "Account created successfully.",
       token,
       user: {
         id: user._id,
-        name: user.name,
+        firstName: user.firstName,
+        lastName: user.lastName,
         email: user.email,
-        phone: user.phone,
-        cnic: user.cnic,
         role: user.role,
-        status: user.status,
-        ...(role === 'sme' && { businessName: user.businessName, ntn: user.ntn }),
-        ...(role === 'investor' && { city: user.city }),
-        createdAt: user.createdAt,
       },
     });
-  } catch (error) {
-    next(error);
+  } catch (err) {
+    // Duplicate key error (race condition)
+    if (err.code === 11000) {
+      return res.status(409).json({
+        success: false,
+        message: "An account with this email already exists.",
+      });
+    }
+    console.error("[AUTH] Register error:", err);
+    return res.status(500).json({ success: false, message: "Registration failed. Please try again." });
   }
 };
 
-// ─────────────────────────────────────────────────────────────
-// @route   POST /api/auth/login
-// @desc    Authenticate user & return JWT (with lockout after 5 fails)
-// @access  Public
-// ─────────────────────────────────────────────────────────────
-const login = async (req, res, next) => {
+// ─── Login ────────────────────────────────────────────────────────────────────
+exports.login = async (req, res) => {
   try {
-    // 1. Validate
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(422).json({
-        success: false,
-        message: 'Validation failed',
-        errors: formatValidationErrors(errors),
-      });
-    }
-
     const { email, password } = req.body;
 
-    // 2. Find user (include password + lockout fields for this check only)
-    const user = await User.findOne({ email }).select('+password +loginAttempts +lockUntil');
+    // ── Basic Input Validation ──────────────────────────────────────────────
+    if (!email || !password) {
+      return res.status(400).json({
+        success: false,
+        message: "Email and password are required.",
+      });
+    }
 
+    // ── Fetch user with sensitive fields needed for auth ────────────────────
+    // Uses the static method that explicitly selects +password +loginAttempts +lockUntil
+    const user = await User.findByEmailWithPassword(email);
+
+    // ── User not found — generic message to prevent user enumeration ────────
     if (!user) {
-      // Generic message to avoid user enumeration
       return res.status(401).json({
         success: false,
-        message: 'Invalid email or password.',
+        message: "Invalid email or password.",
       });
     }
 
-    // 3. Check if account is currently locked
-    if (user.isLocked) {
-      const remainingMs = user.lockUntil - Date.now();
-      const remainingMins = Math.ceil(remainingMs / 60000);
-      return res.status(423).json({
-        success: false,
-        message: `Account temporarily locked due to too many failed attempts. Try again in ${remainingMins} minute(s).`,
-        lockedUntil: user.lockUntil,
-      });
-    }
-
-    // 4. Check if account is blocked by admin
-    if (user.status === 'blocked') {
+    // ── Account disabled by admin ───────────────────────────────────────────
+    if (!user.isActive) {
       return res.status(403).json({
         success: false,
-        message: 'Your account has been blocked. Please contact support.',
+        message: "Your account has been disabled. Please contact support.",
       });
     }
 
-    // 5. Verify password
-    const isMatch = await user.comparePassword(password);
+    // ── Account lock check ──────────────────────────────────────────────────
+    if (user.isLocked) {
+      const timeRemaining = formatLockTime(user.lockUntil);
+      return res.status(423).json({
+        success: false,
+        message: `Your account is temporarily locked due to too many failed login attempts. Please try again in ${timeRemaining}.`,
+        lockedUntil: user.lockUntil,
+        timeRemaining,
+      });
+    }
 
-    if (!isMatch) {
-      // Increment failed attempts (may trigger lockout)
+    // ── Password comparison ─────────────────────────────────────────────────
+    const isPasswordValid = await user.comparePassword(password);
+
+    if (!isPasswordValid) {
+      // Increment failed attempt counter (may set lockUntil)
       await user.incLoginAttempts();
 
-      const maxAttempts = parseInt(process.env.MAX_LOGIN_ATTEMPTS, 10) || 5;
-      const attemptsAfter = user.loginAttempts + 1;
-      const remaining = maxAttempts - attemptsAfter;
+      // Re-fetch to get updated loginAttempts count after increment
+      const updatedUser = await User.findByEmailWithPassword(email);
+      const attemptsLeft = Math.max(
+        0,
+        require("../models/User").MAX_LOGIN_ATTEMPTS - (updatedUser?.loginAttempts || 0)
+      );
 
-      if (remaining <= 0) {
-        const lockMins = parseInt(process.env.LOCK_TIME_MINUTES, 10) || 30;
+      // If now locked after this attempt
+      if (updatedUser?.isLocked) {
+        const timeRemaining = formatLockTime(updatedUser.lockUntil);
         return res.status(423).json({
           success: false,
-          message: `Too many failed attempts. Account locked for ${lockMins} minute(s).`,
+          message: `Too many failed attempts. Your account has been locked for 15 minutes. Please try again in ${timeRemaining}.`,
+          lockedUntil: updatedUser.lockUntil,
+          timeRemaining,
         });
       }
 
+      // Still has attempts remaining
       return res.status(401).json({
         success: false,
-        message: `Invalid email or password. ${remaining} attempt(s) remaining before lockout.`,
+        message:
+          attemptsLeft > 0
+            ? `Invalid email or password. ${attemptsLeft} attempt${attemptsLeft !== 1 ? "s" : ""} remaining before account lockout.`
+            : "Invalid email or password.",
       });
     }
 
-    // 6. Successful login — reset counter
+    // ── Successful login — reset failed attempts ────────────────────────────
     await user.resetLoginAttempts();
 
-    // 7. Generate token
-    const token = generateToken(user);
-
-    // 8. Fetch wallet balance for convenience
-    const wallet = await Wallet.findOne({ user: user._id }).select('balance frozenBalance currency');
+    // ── Issue JWT ───────────────────────────────────────────────────────────
+    const token = generateToken(user._id, user.role);
 
     return res.status(200).json({
       success: true,
-      message: 'Login successful.',
+      message: "Login successful.",
       token,
       user: {
         id: user._id,
-        name: user.name,
+        firstName: user.firstName,
+        lastName: user.lastName,
         email: user.email,
-        phone: user.phone,
-        cnic: user.cnic,
         role: user.role,
-        status: user.status,
-        ...(user.role === 'sme' && { businessName: user.businessName, ntn: user.ntn }),
-        ...(user.role === 'investor' && { city: user.city }),
-        lastLogin: user.lastLogin,
-        createdAt: user.createdAt,
       },
-      wallet: wallet
-        ? {
-            balance: wallet.balance,
-            frozenBalance: wallet.frozenBalance,
-            availableBalance: wallet.availableBalance,
-            currency: wallet.currency,
-          }
-        : null,
     });
-  } catch (error) {
-    next(error);
+  } catch (err) {
+    console.error("[AUTH] Login error:", err);
+    return res.status(500).json({ success: false, message: "Login failed. Please try again." });
   }
 };
 
-// ─────────────────────────────────────────────────────────────
-// @route   GET /api/auth/me
-// @desc    Get currently authenticated user's profile
-// @access  Private (requires valid JWT)
-// ─────────────────────────────────────────────────────────────
-const getMe = async (req, res, next) => {
+// ─── Get Current User ─────────────────────────────────────────────────────────
+// Requires auth middleware to set req.user
+exports.getMe = async (req, res) => {
   try {
-    // req.user is populated by protect middleware (no password field)
-    const user = req.user;
-
-    // Also return wallet summary
-    const wallet = await Wallet.findOne({ user: user._id }).select('balance frozenBalance currency');
-
-    // Unread notification count
-    const unreadCount = await Notification.countDocuments({
-      recipient: user._id,
-      isRead: false,
-    });
-
-    return res.status(200).json({
-      success: true,
-      user: {
-        id: user._id,
-        name: user.name,
-        email: user.email,
-        phone: user.phone,
-        cnic: user.cnic,
-        role: user.role,
-        status: user.status,
-        profilePicture: user.profilePicture,
-        ...(user.role === 'sme' && { businessName: user.businessName, ntn: user.ntn }),
-        ...(user.role === 'investor' && { city: user.city }),
-        lastLogin: user.lastLogin,
-        createdAt: user.createdAt,
-        updatedAt: user.updatedAt,
-      },
-      wallet: wallet
-        ? {
-            balance: wallet.balance,
-            frozenBalance: wallet.frozenBalance,
-            availableBalance: wallet.availableBalance,
-            currency: wallet.currency,
-          }
-        : null,
-      unreadNotifications: unreadCount,
-    });
-  } catch (error) {
-    next(error);
+    const user = await User.findById(req.user.id);
+    if (!user) {
+      return res.status(404).json({ success: false, message: "User not found." });
+    }
+    return res.status(200).json({ success: true, user });
+  } catch (err) {
+    console.error("[AUTH] getMe error:", err);
+    return res.status(500).json({ success: false, message: "Failed to fetch user." });
   }
 };
 
-module.exports = { register, login, getMe };
+// ─── Change Password ──────────────────────────────────────────────────────────
+exports.changePassword = async (req, res) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({
+        success: false,
+        message: "Current password and new password are required.",
+      });
+    }
+
+    if (newPassword.length < 8) {
+      return res.status(400).json({
+        success: false,
+        message: "New password must be at least 8 characters.",
+      });
+    }
+
+    // Explicitly fetch password for verification
+    const user = await User.findById(req.user.id).select("+password");
+    if (!user) {
+      return res.status(404).json({ success: false, message: "User not found." });
+    }
+
+    const isValid = await user.comparePassword(currentPassword);
+    if (!isValid) {
+      return res.status(401).json({ success: false, message: "Current password is incorrect." });
+    }
+
+    user.password = newPassword; // Pre-save hook will hash it
+    await user.save();
+
+    return res.status(200).json({ success: true, message: "Password changed successfully." });
+  } catch (err) {
+    console.error("[AUTH] changePassword error:", err);
+    return res.status(500).json({ success: false, message: "Failed to change password." });
+  }
+};
+
+// ─── Logout ───────────────────────────────────────────────────────────────────
+// JWT is stateless; logout is handled client-side by discarding the token.
+// For token invalidation, implement a token blacklist (Redis) or use short-lived tokens.
+exports.logout = (req, res) => {
+  return res.status(200).json({ success: true, message: "Logged out successfully." });
+};
+
+// ─── Admin: Unlock Account ────────────────────────────────────────────────────
+exports.unlockAccount = async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const user = await User.findById(userId).select("+loginAttempts +lockUntil");
+    if (!user) {
+      return res.status(404).json({ success: false, message: "User not found." });
+    }
+
+    await user.updateOne({
+      $set: { loginAttempts: 0 },
+      $unset: { lockUntil: 1 },
+    });
+
+    return res.status(200).json({ success: true, message: "Account unlocked successfully." });
+  } catch (err) {
+    console.error("[AUTH] unlockAccount error:", err);
+    return res.status(500).json({ success: false, message: "Failed to unlock account." });
+  }
+};

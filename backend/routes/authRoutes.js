@@ -1,100 +1,93 @@
-const express = require('express');
-const { body } = require('express-validator');
-const { register, login, getMe } = require('../controllers/authController');
-const { protect } = require('../middlewares/authMiddleware');
+const express = require("express");
+const rateLimit = require("express-rate-limit");
+const {
+  register,
+  login,
+  getMe,
+  changePassword,
+  logout,
+  unlockAccount,
+} = require("../controllers/authController");
+const { protect, authorize } = require("../middlewares/authMiddleware");
 
 const router = express.Router();
 
-// ── Validation rules ─────────────────────────────────────────
+// ─── Strict Rate Limiter: Login Route Only ─────────────────────────────────────
+// 5 requests per 15 minutes per IP.
+// This is intentionally much tighter than the global limiter to protect
+// against brute-force credential stuffing attacks.
+const loginRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,   // 15 minutes
+  max: 5,                      // 5 attempts per IP per window
+  standardHeaders: true,
+  legacyHeaders: false,
+  skipSuccessfulRequests: false, // Count all requests (successful logins too)
+  message: {
+    success: false,
+    message:
+      "Too many login attempts from this IP address. Please wait 15 minutes before trying again.",
+  },
+  handler: (req, res, next, options) => {
+    console.warn(
+      `[RATE LIMIT] Login limit exceeded — IP: ${req.ip} | Email attempted: ${
+        req.body?.email ? req.body.email.replace(/(.{2}).+(@.+)/, "$1***$2") : "unknown"
+      }`
+    );
+    res.status(429).json(options.message);
+  },
+  // Use a key generator that combines IP + route to avoid collisions
+  keyGenerator: (req) => `login:${req.ip}`,
+});
 
-const registerValidation = [
-  body('name')
-    .trim()
-    .notEmpty().withMessage('Name is required')
-    .isLength({ min: 2, max: 100 }).withMessage('Name must be between 2 and 100 characters'),
+// ─── Registration Rate Limiter ────────────────────────────────────────────────
+// Slightly more lenient than login but still protects against mass account creation.
+const registerRateLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000, // 1 hour
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    success: false,
+    message: "Too many registration attempts. Please try again in an hour.",
+  },
+  keyGenerator: (req) => `register:${req.ip}`,
+});
 
-  body('email')
-    .trim()
-    .notEmpty().withMessage('Email is required')
-    .isEmail().withMessage('Please provide a valid email address')
-    .normalizeEmail(),
+// ─── Password Reset Rate Limiter ──────────────────────────────────────────────
+const passwordResetLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000, // 1 hour
+  max: 3,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    success: false,
+    message: "Too many password reset attempts. Please try again in an hour.",
+  },
+  keyGenerator: (req) => `pwreset:${req.ip}`,
+});
 
-  body('password')
-    .notEmpty().withMessage('Password is required')
-    .isLength({ min: 8 }).withMessage('Password must be at least 8 characters')
-    .matches(/[A-Z]/).withMessage('Password must contain at least one uppercase letter')
-    .matches(/[a-z]/).withMessage('Password must contain at least one lowercase letter')
-    .matches(/\d/).withMessage('Password must contain at least one number')
-    .matches(/[@$!%*?&#^()_\-+=]/).withMessage('Password must contain at least one special character'),
+// ─── Public Routes ─────────────────────────────────────────────────────────────
 
-  body('phone')
-    .trim()
-    .notEmpty().withMessage('Phone number is required')
-    .matches(/^(\+92|0092|0)?[3][0-9]{9}$/).withMessage('Please provide a valid Pakistani phone number (e.g. 03001234567)'),
+// POST /api/auth/register
+router.post("/register", registerRateLimiter, register);
 
-  body('cnic')
-    .trim()
-    .notEmpty().withMessage('CNIC is required')
-    .matches(/^\d{5}-\d{7}-\d{1}$/).withMessage('CNIC must be in the format XXXXX-XXXXXXX-X'),
+// POST /api/auth/login  ← strict 5/15min rate limiter applied HERE ONLY
+router.post("/login", loginRateLimiter, login);
 
-  body('role')
-    .trim()
-    .notEmpty().withMessage('Role is required')
-    .isIn(['sme', 'investor']).withMessage('Role must be either sme or investor'),
+// POST /api/auth/logout
+router.post("/logout", logout);
 
-  // SME-specific
-  body('businessName')
-    .if(body('role').equals('sme'))
-    .trim()
-    .notEmpty().withMessage('Business name is required for SME accounts')
-    .isLength({ max: 200 }).withMessage('Business name cannot exceed 200 characters'),
+// ─── Protected Routes (require valid JWT) ──────────────────────────────────────
 
-  body('ntn')
-    .if(body('role').equals('sme'))
-    .trim()
-    .notEmpty().withMessage('NTN is required for SME accounts')
-    .matches(/^\d{7}$/).withMessage('NTN must be a 7-digit number'),
+// GET /api/auth/me
+router.get("/me", protect, getMe);
 
-  // Investor-specific
-  body('city')
-    .if(body('role').equals('investor'))
-    .trim()
-    .notEmpty().withMessage('City is required for investor accounts')
-    .isLength({ max: 100 }).withMessage('City name cannot exceed 100 characters'),
-];
+// PUT /api/auth/change-password
+router.put("/change-password", protect, changePassword);
 
-const loginValidation = [
-  body('email')
-    .trim()
-    .notEmpty().withMessage('Email is required')
-    .isEmail().withMessage('Please provide a valid email address')
-    .normalizeEmail(),
+// ─── Admin Routes ──────────────────────────────────────────────────────────────
 
-  body('password')
-    .notEmpty().withMessage('Password is required'),
-];
-
-// ── Routes ───────────────────────────────────────────────────
-
-/**
- * @route   POST /api/auth/register
- * @desc    Register a new SME or Investor account
- * @access  Public
- */
-router.post('/register', registerValidation, register);
-
-/**
- * @route   POST /api/auth/login
- * @desc    Login and receive JWT token
- * @access  Public
- */
-router.post('/login', loginValidation, login);
-
-/**
- * @route   GET /api/auth/me
- * @desc    Get current authenticated user's profile
- * @access  Private
- */
-router.get('/me', protect, getMe);
+// PUT /api/auth/unlock/:userId  — admin only
+router.put("/unlock/:userId", protect, authorize("admin"), unlockAccount);
 
 module.exports = router;
