@@ -1,355 +1,492 @@
-import React, { useState, useEffect, useCallback, useRef } from "react";
-import { Link, useLocation, useNavigate } from "react-router-dom";
+import React, { useState, useEffect, useRef } from "react";
+import { Bell, LogOut, User, CheckCheck, X, ChevronRight } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import StatusBadge from "./StatusBadge";
 
-const API_BASE = process.env.REACT_APP_API_URL || "";
-const POLL_INTERVAL = 30000; // 30 seconds
-
-// Role-based nav links — adjust paths to match your router config
-const NAV_LINKS = {
-  admin: [
-    { label: "Dashboard", path: "/admin/dashboard", icon: "dashboard" },
-    { label: "Users", path: "/admin/users", icon: "users" },
-    { label: "Investments", path: "/admin/investments", icon: "investments" },
-    { label: "Wallet", path: "/wallet", icon: "wallet" },
-    { label: "Notifications", path: "/notifications", icon: "bell" },
-  ],
-  investor: [
-    { label: "Dashboard", path: "/investor/dashboard", icon: "dashboard" },
-    { label: "Portfolio", path: "/investor/portfolio", icon: "investments" },
-    { label: "Wallet", path: "/wallet", icon: "wallet" },
-    { label: "Notifications", path: "/notifications", icon: "bell" },
-  ],
-  borrower: [
-    { label: "Dashboard", path: "/borrower/dashboard", icon: "dashboard" },
-    { label: "My Loans", path: "/borrower/loans", icon: "investments" },
-    { label: "Wallet", path: "/wallet", icon: "wallet" },
-    { label: "Notifications", path: "/notifications", icon: "bell" },
-  ],
-};
-
-const ICONS = {
-  dashboard: (
-    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zm10 0a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zm10 0a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
-    </svg>
-  ),
-  users: (
-    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
-    </svg>
-  ),
-  investments: (
-    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
-    </svg>
-  ),
-  wallet: (
-    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
-    </svg>
-  ),
-  bell: (
-    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
-    </svg>
-  ),
-  menu: (
-    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-    </svg>
-  ),
-  close: (
-    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-    </svg>
-  ),
-  logout: (
-    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-    </svg>
-  ),
-  user: (
-    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-    </svg>
-  ),
-};
-
-// Helper: get user from localStorage
-function getUser() {
-  try {
-    const raw = localStorage.getItem("user");
-    return raw ? JSON.parse(raw) : null;
-  } catch {
-    return null;
-  }
-}
-
-function getRole() {
-  const user = getUser();
-  return user?.role?.toLowerCase() || "investor";
-}
-
-export default function Navbar() {
-  const location = useLocation();
+/**
+ * Navbar — top bar with page title, notification bell, and logout.
+ *
+ * Props:
+ *   title            string   — current page heading
+ *   user             object   — { fullName, email, role }
+ *   notifications    array    — [{ _id, title, message, type, isRead, createdAt }]
+ *   onMarkAllRead    fn       — callback to mark all notifications read
+ *   onMarkRead       fn(id)   — callback to mark single notification read
+ *   onLogout         fn       — override default logout
+ *   accentColor      string   — brand accent (default #3b82f6)
+ */
+export default function Navbar({
+  title = "Dashboard",
+  user = {},
+  notifications = [],
+  onMarkAllRead,
+  onMarkRead,
+  onLogout,
+  accentColor = "#3b82f6",
+}) {
+  const [open, setOpen] = useState(false);
+  const dropdownRef = useRef(null);
   const navigate = useNavigate();
-  const [mobileOpen, setMobileOpen] = useState(false);
-  const [unreadCount, setUnreadCount] = useState(0);
-  const [profileOpen, setProfileOpen] = useState(false);
-  const profileRef = useRef(null);
-  const pollRef = useRef(null);
 
-  const user = getUser();
-  const role = getRole();
-  const links = NAV_LINKS[role] || NAV_LINKS.investor;
+  const unreadCount = notifications.filter((n) => !n.isRead).length;
 
-  const fetchUnreadCount = useCallback(async () => {
-    const token = localStorage.getItem("token");
-    if (!token) return;
-    try {
-      const res = await fetch(`${API_BASE}/api/notifications/unread-count`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (!res.ok) return;
-      const data = await res.json();
-      const count = data.count ?? data.unreadCount ?? data.data?.count ?? 0;
-      setUnreadCount(count);
-    } catch {
-      // Silently ignore network errors for polling
-    }
-  }, []);
-
-  // Initial fetch + 30s polling
+  // Close dropdown on outside click
   useEffect(() => {
-    fetchUnreadCount();
-    pollRef.current = setInterval(fetchUnreadCount, POLL_INTERVAL);
-    return () => clearInterval(pollRef.current);
-  }, [fetchUnreadCount]);
-
-  // Reset unread count when visiting notifications page
-  useEffect(() => {
-    if (location.pathname === "/notifications") {
-      setUnreadCount(0);
-    }
-  }, [location.pathname]);
-
-  // Close profile dropdown on outside click
-  useEffect(() => {
-    function handleClickOutside(e) {
-      if (profileRef.current && !profileRef.current.contains(e.target)) {
-        setProfileOpen(false);
+    const handler = (e) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
+        setOpen(false);
       }
-    }
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
   }, []);
 
-  // Close mobile menu on route change
-  useEffect(() => {
-    setMobileOpen(false);
-  }, [location.pathname]);
+  const handleLogout = () => {
+    if (onLogout) {
+      onLogout();
+    } else {
+      localStorage.removeItem("token");
+      localStorage.removeItem("user");
+      navigate("/login");
+    }
+  };
 
-  function handleLogout() {
-    localStorage.removeItem("token");
-    localStorage.removeItem("user");
-    navigate("/login");
-  }
+  const handleMarkRead = (id) => {
+    if (onMarkRead) onMarkRead(id);
+  };
 
-  function isActive(path) {
-    return location.pathname === path || location.pathname.startsWith(path + "/");
-  }
+  const formatTime = (dateStr) => {
+    if (!dateStr) return "";
+    const diff = Date.now() - new Date(dateStr).getTime();
+    const mins = Math.floor(diff / 60000);
+    if (mins < 60) return `${mins}m ago`;
+    const hrs = Math.floor(mins / 60);
+    if (hrs < 24) return `${hrs}h ago`;
+    return `${Math.floor(hrs / 24)}d ago`;
+  };
 
-  const initials = user
-    ? `${user.firstName?.[0] || user.name?.[0] || "U"}${user.lastName?.[0] || ""}`.toUpperCase()
-    : "U";
-
-  const roleBadgeColor = {
-    admin: "bg-rose-500/20 text-rose-400 border-rose-500/30",
-    investor: "bg-blue-500/20 text-blue-400 border-blue-500/30",
-    borrower: "bg-amber-500/20 text-amber-400 border-amber-500/30",
-  }[role] || "bg-slate-700 text-slate-300 border-slate-600";
+  const typeToStatus = (type) => {
+    if (!type) return null;
+    if (type.includes("activat")) return "active";
+    if (type.includes("block")) return "blocked";
+    if (type.includes("fund")) return "funded";
+    if (type.includes("reject")) return "rejected";
+    if (type.includes("approv")) return "approved";
+    if (type.includes("repaid") || type.includes("repayment")) return "repaid";
+    return null;
+  };
 
   return (
-    <>
-      <nav className="sticky top-0 z-50 bg-[#0f172a]/95 backdrop-blur-sm border-b border-slate-700/60">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-16">
+    <header
+      style={{
+        height: "64px",
+        background: "#0f172a",
+        borderBottom: "1px solid #1e293b",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        padding: "0 24px",
+        position: "sticky",
+        top: 0,
+        zIndex: 30,
+      }}
+    >
+      {/* ── Page Title ── */}
+      <div>
+        <h1
+          style={{
+            margin: 0,
+            fontSize: "18px",
+            fontWeight: "700",
+            color: "#f1f5f9",
+            letterSpacing: "-0.3px",
+            fontFamily: "'DM Sans', sans-serif",
+          }}
+        >
+          {title}
+        </h1>
+      </div>
 
-            {/* Logo */}
-            <Link
-              to="/"
-              className="flex items-center gap-2.5 group"
-            >
-              <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center shadow-lg shadow-blue-900/50 group-hover:bg-blue-500 transition-colors">
-                <svg className="w-4.5 h-4.5 text-white" viewBox="0 0 20 20" fill="currentColor" width={18} height={18}>
-                  <path d="M2 11a1 1 0 011-1h2a1 1 0 011 1v5a1 1 0 01-1 1H3a1 1 0 01-1-1v-5zm6-4a1 1 0 011-1h2a1 1 0 011 1v9a1 1 0 01-1 1H9a1 1 0 01-1-1V7zm6-3a1 1 0 011-1h2a1 1 0 011 1v12a1 1 0 01-1 1h-2a1 1 0 01-1-1V4z" />
-                </svg>
-              </div>
-              <span className="font-bold text-white text-lg tracking-tight hidden sm:block">
-                Factor<span className="text-blue-400">One</span>
+      {/* ── Right Controls ── */}
+      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+        {/* ─ Notification Bell ─ */}
+        <div ref={dropdownRef} style={{ position: "relative" }}>
+          <button
+            onClick={() => setOpen((o) => !o)}
+            style={{
+              position: "relative",
+              width: "38px",
+              height: "38px",
+              borderRadius: "10px",
+              background: open ? "#1e293b" : "transparent",
+              border: `1px solid ${open ? "#334155" : "transparent"}`,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              cursor: "pointer",
+              color: "#94a3b8",
+              transition: "all 0.15s ease",
+              padding: 0,
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = "#1e293b";
+              e.currentTarget.style.border = "1px solid #334155";
+            }}
+            onMouseLeave={(e) => {
+              if (!open) {
+                e.currentTarget.style.background = "transparent";
+                e.currentTarget.style.border = "1px solid transparent";
+              }
+            }}
+          >
+            <Bell size={18} />
+            {unreadCount > 0 && (
+              <span
+                style={{
+                  position: "absolute",
+                  top: "6px",
+                  right: "6px",
+                  width: unreadCount > 9 ? "18px" : "16px",
+                  height: "16px",
+                  borderRadius: "8px",
+                  background: "#ef4444",
+                  color: "#fff",
+                  fontSize: "9px",
+                  fontWeight: "700",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  border: "2px solid #0f172a",
+                  fontFamily: "'DM Sans', sans-serif",
+                  lineHeight: 1,
+                }}
+              >
+                {unreadCount > 99 ? "99+" : unreadCount}
               </span>
-            </Link>
+            )}
+          </button>
 
-            {/* Desktop Nav Links */}
-            <div className="hidden md:flex items-center gap-1">
-              {links.map((link) => {
-                if (link.icon === "bell") return null; // Bell handled separately
-                return (
-                  <Link
-                    key={link.path}
-                    to={link.path}
-                    className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all ${
-                      isActive(link.path)
-                        ? "bg-blue-600/20 text-blue-400 border border-blue-500/30"
-                        : "text-slate-400 hover:text-slate-200 hover:bg-slate-700/50"
-                    }`}
-                  >
-                    {ICONS[link.icon]}
-                    {link.label}
-                  </Link>
-                );
-              })}
-            </div>
-
-            {/* Right side */}
-            <div className="flex items-center gap-2">
-
-              {/* Notification Bell */}
-              <Link
-                to="/notifications"
-                className={`relative p-2.5 rounded-xl transition-all ${
-                  isActive("/notifications")
-                    ? "bg-blue-600/20 text-blue-400"
-                    : "text-slate-400 hover:text-slate-200 hover:bg-slate-700/50"
-                }`}
-                aria-label={`Notifications${unreadCount > 0 ? ` (${unreadCount} unread)` : ""}`}
+          {/* ─ Notification Dropdown ─ */}
+          {open && (
+            <div
+              style={{
+                position: "absolute",
+                top: "calc(100% + 8px)",
+                right: 0,
+                width: "340px",
+                background: "#1e293b",
+                border: "1px solid #334155",
+                borderRadius: "14px",
+                boxShadow: "0 20px 48px rgba(0,0,0,0.5)",
+                zIndex: 100,
+                overflow: "hidden",
+              }}
+            >
+              {/* Header */}
+              <div
+                style={{
+                  padding: "14px 16px 10px",
+                  borderBottom: "1px solid #334155",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                }}
               >
-                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
-                </svg>
-                {unreadCount > 0 && (
-                  <span className="absolute -top-0.5 -right-0.5 flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-blue-600 text-white text-[10px] font-bold border-2 border-[#0f172a] leading-none">
-                    {unreadCount > 99 ? "99+" : unreadCount}
-                  </span>
-                )}
-              </Link>
-
-              {/* Profile Dropdown */}
-              <div className="relative" ref={profileRef}>
-                <button
-                  onClick={() => setProfileOpen((o) => !o)}
-                  className="flex items-center gap-2 pl-2 pr-3 py-1.5 rounded-xl hover:bg-slate-700/50 transition-all group"
+                <span
+                  style={{
+                    fontSize: "14px",
+                    fontWeight: "700",
+                    color: "#f1f5f9",
+                    fontFamily: "'DM Sans', sans-serif",
+                  }}
                 >
-                  <div className="w-7 h-7 rounded-lg bg-blue-600 flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
-                    {initials}
-                  </div>
-                  <div className="hidden sm:flex flex-col items-start">
-                    <span className="text-sm font-medium text-white leading-none">
-                      {user?.firstName || user?.name?.split(" ")[0] || "User"}
+                  Notifications
+                  {unreadCount > 0 && (
+                    <span
+                      style={{
+                        marginLeft: "8px",
+                        fontSize: "11px",
+                        fontWeight: "600",
+                        color: accentColor,
+                        background: `${accentColor}18`,
+                        padding: "1px 7px",
+                        borderRadius: "10px",
+                      }}
+                    >
+                      {unreadCount} new
                     </span>
-                    <span className={`text-[10px] font-semibold capitalize px-1.5 py-0.5 mt-0.5 rounded-full border ${roleBadgeColor}`}>
-                      {role}
-                    </span>
-                  </div>
-                  <svg
-                    className={`w-3.5 h-3.5 text-slate-400 transition-transform hidden sm:block ${profileOpen ? "rotate-180" : ""}`}
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
+                  )}
+                </span>
+                {unreadCount > 0 && (
+                  <button
+                    onClick={() => { if (onMarkAllRead) onMarkAllRead(); }}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "4px",
+                      fontSize: "11px",
+                      fontWeight: "600",
+                      color: accentColor,
+                      background: "transparent",
+                      border: "none",
+                      cursor: "pointer",
+                      padding: "4px 8px",
+                      borderRadius: "6px",
+                      fontFamily: "'DM Sans', sans-serif",
+                    }}
                   >
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                  </svg>
-                </button>
-
-                {/* Dropdown */}
-                {profileOpen && (
-                  <div className="absolute right-0 top-full mt-2 w-52 bg-[#1e293b] border border-slate-700/60 rounded-xl shadow-2xl shadow-black/40 overflow-hidden z-50">
-                    <div className="px-4 py-3 border-b border-slate-700/60">
-                      <p className="text-sm font-semibold text-white truncate">
-                        {user?.firstName && user?.lastName
-                          ? `${user.firstName} ${user.lastName}`
-                          : user?.name || "User"}
-                      </p>
-                      <p className="text-xs text-slate-400 truncate mt-0.5">{user?.email || ""}</p>
-                    </div>
-                    <div className="p-1.5">
-                      <Link
-                        to="/profile"
-                        className="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm text-slate-300 hover:text-white hover:bg-slate-700/60 transition-all"
-                        onClick={() => setProfileOpen(false)}
-                      >
-                        {ICONS.user}
-                        Profile Settings
-                      </Link>
-                      <Link
-                        to="/wallet"
-                        className="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm text-slate-300 hover:text-white hover:bg-slate-700/60 transition-all"
-                        onClick={() => setProfileOpen(false)}
-                      >
-                        {ICONS.wallet}
-                        Wallet
-                      </Link>
-                      <div className="my-1 border-t border-slate-700/60" />
-                      <button
-                        onClick={handleLogout}
-                        className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 transition-all"
-                      >
-                        {ICONS.logout}
-                        Sign Out
-                      </button>
-                    </div>
-                  </div>
+                    <CheckCheck size={12} />
+                    Mark all read
+                  </button>
                 )}
               </div>
 
-              {/* Mobile hamburger */}
-              <button
-                onClick={() => setMobileOpen((o) => !o)}
-                className="md:hidden p-2 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-700/50 transition-all"
-                aria-label="Toggle menu"
-              >
-                {mobileOpen ? ICONS.close : ICONS.menu}
-              </button>
+              {/* List */}
+              <div style={{ maxHeight: "360px", overflowY: "auto" }}>
+                {notifications.length === 0 ? (
+                  <div
+                    style={{
+                      padding: "32px 16px",
+                      textAlign: "center",
+                      color: "#475569",
+                      fontSize: "13px",
+                      fontFamily: "'DM Sans', sans-serif",
+                    }}
+                  >
+                    <Bell
+                      size={28}
+                      style={{ marginBottom: "8px", color: "#334155" }}
+                    />
+                    <p style={{ margin: 0 }}>No notifications yet</p>
+                  </div>
+                ) : (
+                  notifications.map((n) => {
+                    const statusKey = typeToStatus(n.type);
+                    return (
+                      <div
+                        key={n._id}
+                        onClick={() => handleMarkRead(n._id)}
+                        style={{
+                          padding: "12px 16px",
+                          borderBottom: "1px solid #0f172a40",
+                          cursor: "pointer",
+                          background: n.isRead ? "transparent" : `${accentColor}08`,
+                          display: "flex",
+                          gap: "10px",
+                          transition: "background 0.15s ease",
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.background = "#334155";
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.background = n.isRead
+                            ? "transparent"
+                            : `${accentColor}08`;
+                        }}
+                      >
+                        {!n.isRead && (
+                          <div
+                            style={{
+                              width: "7px",
+                              height: "7px",
+                              borderRadius: "50%",
+                              background: accentColor,
+                              marginTop: "5px",
+                              flexShrink: 0,
+                            }}
+                          />
+                        )}
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div
+                            style={{
+                              display: "flex",
+                              alignItems: "flex-start",
+                              justifyContent: "space-between",
+                              gap: "8px",
+                              marginBottom: "3px",
+                            }}
+                          >
+                            <span
+                              style={{
+                                fontSize: "13px",
+                                fontWeight: n.isRead ? "500" : "700",
+                                color: n.isRead ? "#94a3b8" : "#e2e8f0",
+                                fontFamily: "'DM Sans', sans-serif",
+                                lineHeight: 1.3,
+                              }}
+                            >
+                              {n.title}
+                            </span>
+                            {statusKey && (
+                              <StatusBadge status={statusKey} size="sm" dot />
+                            )}
+                          </div>
+                          <p
+                            style={{
+                              margin: "0 0 4px",
+                              fontSize: "12px",
+                              color: "#64748b",
+                              fontFamily: "'DM Sans', sans-serif",
+                              lineHeight: 1.4,
+                              overflow: "hidden",
+                              display: "-webkit-box",
+                              WebkitLineClamp: 2,
+                              WebkitBoxOrient: "vertical",
+                            }}
+                          >
+                            {n.message}
+                          </p>
+                          <span
+                            style={{
+                              fontSize: "11px",
+                              color: "#475569",
+                              fontFamily: "'DM Sans', sans-serif",
+                            }}
+                          >
+                            {formatTime(n.createdAt)}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+
+              {notifications.length > 0 && (
+                <div
+                  style={{
+                    padding: "10px 16px",
+                    borderTop: "1px solid #334155",
+                    textAlign: "center",
+                  }}
+                >
+                  <button
+                    onClick={() => setOpen(false)}
+                    style={{
+                      fontSize: "12px",
+                      color: accentColor,
+                      background: "transparent",
+                      border: "none",
+                      cursor: "pointer",
+                      fontWeight: "600",
+                      fontFamily: "'DM Sans', sans-serif",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: "4px",
+                    }}
+                  >
+                    View all <ChevronRight size={12} />
+                  </button>
+                </div>
+              )}
             </div>
+          )}
+        </div>
+
+        {/* ─ Divider ─ */}
+        <div
+          style={{
+            width: "1px",
+            height: "24px",
+            background: "#1e293b",
+            margin: "0 4px",
+          }}
+        />
+
+        {/* ─ User Chip ─ */}
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: "8px",
+            padding: "5px 10px 5px 5px",
+            borderRadius: "10px",
+            border: "1px solid transparent",
+            cursor: "default",
+          }}
+        >
+          <div
+            style={{
+              width: "30px",
+              height: "30px",
+              borderRadius: "50%",
+              background: `linear-gradient(135deg, ${accentColor}cc, ${accentColor}55)`,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              fontSize: "11px",
+              fontWeight: "700",
+              color: "#fff",
+              flexShrink: 0,
+            }}
+          >
+            {user?.fullName
+              ? user.fullName
+                  .split(" ")
+                  .map((n) => n[0])
+                  .join("")
+                  .toUpperCase()
+                  .slice(0, 2)
+              : <User size={14} />}
+          </div>
+          <div style={{ display: "flex", flexDirection: "column" }}>
+            <span
+              style={{
+                fontSize: "13px",
+                fontWeight: "600",
+                color: "#e2e8f0",
+                lineHeight: 1.2,
+                fontFamily: "'DM Sans', sans-serif",
+              }}
+            >
+              {user?.fullName || "User"}
+            </span>
+            <span
+              style={{
+                fontSize: "10px",
+                color: "#475569",
+                textTransform: "uppercase",
+                letterSpacing: "0.4px",
+                fontFamily: "'DM Sans', sans-serif",
+              }}
+            >
+              {user?.role || "SME"}
+            </span>
           </div>
         </div>
 
-        {/* Mobile Menu */}
-        {mobileOpen && (
-          <div className="md:hidden border-t border-slate-700/60 bg-[#0f172a]">
-            <div className="px-4 py-3 space-y-1">
-              {links.map((link) => (
-                <Link
-                  key={link.path}
-                  to={link.path}
-                  className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all ${
-                    isActive(link.path)
-                      ? "bg-blue-600/20 text-blue-400 border border-blue-500/30"
-                      : "text-slate-400 hover:text-slate-200 hover:bg-slate-700/50"
-                  }`}
-                >
-                  <span className="flex-shrink-0">{ICONS[link.icon]}</span>
-                  {link.label}
-                  {link.icon === "bell" && unreadCount > 0 && (
-                    <span className="ml-auto flex items-center justify-center min-w-[20px] h-5 px-1 rounded-full bg-blue-600 text-white text-xs font-bold">
-                      {unreadCount > 99 ? "99+" : unreadCount}
-                    </span>
-                  )}
-                </Link>
-              ))}
-              <div className="pt-2 border-t border-slate-700/60 mt-2">
-                <button
-                  onClick={handleLogout}
-                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 transition-all"
-                >
-                  {ICONS.logout}
-                  Sign Out
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-      </nav>
-    </>
+        {/* ─ Logout Button ─ */}
+        <button
+          onClick={handleLogout}
+          title="Logout"
+          style={{
+            width: "38px",
+            height: "38px",
+            borderRadius: "10px",
+            background: "transparent",
+            border: "1px solid transparent",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            cursor: "pointer",
+            color: "#64748b",
+            transition: "all 0.15s ease",
+            padding: 0,
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.background = "#fee2e215";
+            e.currentTarget.style.color = "#f87171";
+            e.currentTarget.style.border = "1px solid #f8717130";
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.background = "transparent";
+            e.currentTarget.style.color = "#64748b";
+            e.currentTarget.style.border = "1px solid transparent";
+          }}
+        >
+          <LogOut size={17} />
+        </button>
+      </div>
+    </header>
   );
 }
