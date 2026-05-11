@@ -1,50 +1,30 @@
 const express = require("express");
 const {
-  createInvoice,
-  getAllInvoices,
-  getInvoiceById,
-  updateInvoice,
-  deleteInvoice,
-  updateInvoiceStatus,
+  createInvoice, getMyInvoices, getMarketplace, getInvoiceById,
+  approveInvoice, rejectInvoice, fbrCheck, creditCheck, getAllInvoices,
 } = require("../controllers/invoiceController");
-const { protect, authorize } = require("../middlewares/authMiddleware");
-const { uploadSingle, uploadOptional } = require("../middlewares/uploadMiddleware");
+const { protect } = require("../middlewares/authMiddleware");
+const { authorize } = require("../middlewares/roleMiddleware");
+const { uploadOptional } = require("../middlewares/uploadMiddleware");
 
 const router = express.Router();
-
-// All invoice routes require authentication
 router.use(protect);
 
-// ─── POST /api/invoices ───────────────────────────────────────────────────────
-// Create a new invoice. Accepts an optional "invoiceFile" field (jpg/png/pdf, max 5MB).
-// uploadSingle runs the full pipeline:
-//   multer parse → file required check → magic bytes validate → attach req.uploadedFile
-router.post(
-  "/",
-  authorize("admin", "borrower"),
-  uploadSingle("invoiceFile"),
-  createInvoice
-);
+// SME routes
+router.post("/", authorize("sme"), uploadOptional("invoiceFile"), createInvoice);
+router.get("/my", authorize("sme"), getMyInvoices);
 
-// ─── GET /api/invoices ────────────────────────────────────────────────────────
-router.get("/", getAllInvoices);
+// Investor route — marketplace
+router.get("/marketplace", authorize("investor"), getMarketplace);
 
-// ─── GET /api/invoices/:id ────────────────────────────────────────────────────
+// Admin routes
+router.get("/admin/all", authorize("admin"), getAllInvoices);
+router.patch("/:id/approve", authorize("admin"), approveInvoice);
+router.patch("/:id/reject", authorize("admin"), rejectInvoice);
+router.get("/:id/fbr-check", authorize("admin"), fbrCheck);
+router.get("/:id/credit-check", authorize("admin"), creditCheck);
+
+// Shared — any authenticated user can view a single invoice
 router.get("/:id", getInvoiceById);
-
-// ─── PUT /api/invoices/:id ────────────────────────────────────────────────────
-// Full update. File is optional (uploadOptional won't 400 if no file sent).
-router.put(
-  "/:id",
-  authorize("admin", "borrower"),
-  uploadOptional("invoiceFile"),
-  updateInvoice
-);
-
-// ─── PATCH /api/invoices/:id/status ──────────────────────────────────────────
-router.patch("/:id/status", authorize("admin"), updateInvoiceStatus);
-
-// ─── DELETE /api/invoices/:id ─────────────────────────────────────────────────
-router.delete("/:id", authorize("admin", "borrower"), deleteInvoice);
 
 module.exports = router;

@@ -2,16 +2,17 @@ services:
   - type: web
     name: factorone-backend
     env: node
+    plan: free
     buildCommand: npm install
     startCommand: node server.js
     envVars:
-      - key: MONGO_URI
-        sync: false
-      - key: JWT_SECRET
-        sync: false
       - key: NODE_ENV
         value: production
       - key: PORT
-        value: 5000
-      - key: FRONTEND_URL
-        sync: false
+        value: 10000
+      - key: MONGO_URI
+        fromGroup: factorone-secrets
+      - key: JWT_SECRET
+        fromGroup: factorone-secrets
+      - key: JWT_EXPIRES_IN
+        value: 7d

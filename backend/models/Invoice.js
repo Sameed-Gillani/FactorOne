@@ -2,94 +2,50 @@ const mongoose = require("mongoose");
 
 const InvoiceFileSchema = new mongoose.Schema(
   {
-    filename: { type: String, required: true },    // UUID-safe name on disk
-    originalName: { type: String, required: true }, // Display name only
-    mimetype: { type: String, required: true },
-    size: { type: Number, required: true },         // bytes
-    url: { type: String, required: true },          // /uploads/<uuid>.<ext>
-    uploadedAt: { type: Date, default: Date.now },
+    filename:     { type: String, required: true },
+    originalName: { type: String, required: true },
+    mimetype:     { type: String, required: true },
+    size:         { type: Number, required: true },
+    url:          { type: String, required: true },
+    uploadedAt:   { type: Date, default: Date.now },
   },
   { _id: false }
 );
 
 const InvoiceSchema = new mongoose.Schema(
   {
-    title: {
-      type: String,
-      required: [true, "Invoice title is required"],
-      trim: true,
-      maxlength: [200, "Title cannot exceed 200 characters"],
-    },
-    description: {
-      type: String,
-      trim: true,
-      maxlength: [2000, "Description cannot exceed 2000 characters"],
-      default: "",
-    },
-    amount: {
-      type: Number,
-      required: [true, "Invoice amount is required"],
-      min: [0.01, "Amount must be greater than 0"],
-    },
-    currency: {
-      type: String,
-      default: "USD",
-      uppercase: true,
-      maxlength: 3,
-    },
-    dueDate: {
-      type: Date,
-      default: null,
-    },
+    invoiceNumber:  { type: String, required: [true, "Invoice number is required"], trim: true },
+    smeId:          { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
+    anchorCompany:  { type: String, required: [true, "Anchor company is required"], trim: true },
+    amountPkr:      { type: Number, required: [true, "Amount is required"], min: [50000, "Minimum invoice amount is PKR 50,000"] },
+    issueDate:      { type: Date, required: [true, "Issue date is required"] },
+    dueDate:        { type: Date, required: [true, "Due date is required"] },
+    ntn:            { type: String, required: [true, "NTN is required"], trim: true },
+    sector:         { type: String, trim: true, default: "" },
+    discountRate:   { type: Number, default: 3, min: 1, max: 10 },
+    fundedAmount:   { type: Number, default: 0, min: 0 },
     status: {
       type: String,
-      enum: ["pending", "under_review", "approved", "funded", "paid", "rejected", "cancelled"],
+      enum: ["pending", "verified", "funded", "rejected"],
       default: "pending",
     },
-    statusUpdatedAt: { type: Date, default: null },
-    statusUpdatedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
-
-    // The user who created/submitted the invoice
-    createdBy: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
-      required: true,
-    },
-    // The borrower associated with the invoice (may differ from creator for admin-created)
-    borrowerId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
-      default: null,
-    },
-
-    notes: {
-      type: String,
-      trim: true,
-      maxlength: [1000, "Notes cannot exceed 1000 characters"],
-      default: "",
-    },
-
-    // Attached document (uploaded via uploadMiddleware)
-    file: {
-      type: InvoiceFileSchema,
-      default: null,
-    },
+    adminNote:    { type: String, trim: true, default: "" },
+    fbrStatus:    { type: String, enum: ["unchecked", "matched", "not_found"], default: "unchecked" },
+    creditScore:  { type: String, enum: ["N/A", "Good", "Average", "Poor"], default: "N/A" },
+    file:         { type: InvoiceFileSchema, default: null },
+    fundedAt:     { type: Date, default: null },
   },
   {
     timestamps: true,
     toJSON: {
-      transform(doc, ret) {
-        delete ret.__v;
-        return ret;
-      },
+      transform(doc, ret) { delete ret.__v; return ret; },
     },
   }
 );
 
-// ─── Indexes ──────────────────────────────────────────────────────────────────
-InvoiceSchema.index({ createdBy: 1 });
-InvoiceSchema.index({ borrowerId: 1 });
+InvoiceSchema.index({ smeId: 1 });
 InvoiceSchema.index({ status: 1 });
+InvoiceSchema.index({ anchorCompany: 1 });
 InvoiceSchema.index({ createdAt: -1 });
 
 const Invoice = mongoose.model("Invoice", InvoiceSchema);

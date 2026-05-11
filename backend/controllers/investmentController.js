@@ -35,7 +35,7 @@ const placeInvestment = async (req, res, next) => {
     }
 
     const { invoiceId, amount } = req.body;
-    const investorId = req.user._id;
+    const investorId = req.user.id;
 
     // 2. Fetch invoice (lock within session)
     const invoice = await Invoice.findById(invoiceId).session(session);
@@ -185,36 +185,22 @@ const placeInvestment = async (req, res, next) => {
       });
 
       // 17. Notify SME of disbursement
-      await Notification.send({
+      await Notification.create({
         recipient: invoice.smeId,
         title: '💰 Invoice Fully Funded — Funds Disbursed!',
         message: `Your invoice ${invoice.invoiceNumber} is fully funded. PKR ${disbursementAmount.toLocaleString()} has been credited to your wallet (after ${disbursementFeeRate}% platform fee of PKR ${disbursementFee.toLocaleString()}).`,
-        type: 'payment_received',
-        link: `/invoices/${invoice._id}`,
-        metadata: {
-          invoiceId: invoice._id,
-          invoiceNumber: invoice.invoiceNumber,
-          disbursementAmount,
-          disbursementFee,
-        },
+        type: 'invoice_funded',
       });
     }
 
     await invoice.save({ session });
 
     // 18. Notify investor of successful investment
-    await Notification.send({
+    await Notification.create({
       recipient: investorId,
       title: '✅ Investment Placed Successfully',
       message: `You have invested PKR ${amount.toLocaleString()} in invoice ${invoice.invoiceNumber} (${invoice.anchorCompany}). Expected return: PKR ${expectedReturn.toLocaleString()} by ${new Date(invoice.dueDate).toLocaleDateString('en-PK')}.`,
-      type: 'bid_placed',
-      link: `/investments/${investment[0]._id}`,
-      metadata: {
-        investmentId: investment[0]._id,
-        invoiceId: invoice._id,
-        amount,
-        expectedReturn,
-      },
+      type: 'investment_confirmed',
     });
 
     // 19. Commit transaction
@@ -251,7 +237,7 @@ const getMyInvestments = async (req, res, next) => {
     const limit = Math.min(50, Math.max(1, parseInt(req.query.limit, 10) || 10));
     const skip = (page - 1) * limit;
 
-    const filter = { investorId: req.user._id };
+    const filter = { investorId: req.user.id };
     if (req.query.status) filter.status = req.query.status;
 
     const [investments, total] = await Promise.all([
@@ -268,7 +254,7 @@ const getMyInvestments = async (req, res, next) => {
 
     // Portfolio summary
     const summary = await Investment.aggregate([
-      { $match: { investorId: req.user._id } },
+      { $match: { investorId: req.user.id } },
       {
         $group: {
           _id: '$status',

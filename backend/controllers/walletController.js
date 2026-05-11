@@ -14,7 +14,7 @@ const formatValidationErrors = (errors) =>
 // ─────────────────────────────────────────────────────────────
 const getWallet = async (req, res, next) => {
   try {
-    const wallet = await Wallet.findOne({ user: req.user._id }).populate(
+    const wallet = await Wallet.findOne({ user: req.user.id }).populate(
       'user',
       'name email role'
     );
@@ -28,7 +28,7 @@ const getWallet = async (req, res, next) => {
     const limit = Math.min(50, Math.max(1, parseInt(req.query.limit, 10) || 10));
     const skip = (page - 1) * limit;
 
-    const txFilter = { userId: req.user._id };
+    const txFilter = { userId: req.user.id };
     if (req.query.type) txFilter.type = req.query.type;
     if (req.query.direction) txFilter.direction = req.query.direction;
 
@@ -43,7 +43,7 @@ const getWallet = async (req, res, next) => {
 
     // Spending summary by type
     const txSummary = await Transaction.aggregate([
-      { $match: { userId: req.user._id } },
+      { $match: { userId: req.user.id } },
       {
         $group: {
           _id: { type: '$type', direction: '$direction' },
@@ -102,7 +102,7 @@ const topUp = async (req, res, next) => {
 
     const { amount, paymentMethod, description } = req.body;
 
-    const wallet = await Wallet.findOne({ user: req.user._id });
+    const wallet = await Wallet.findOne({ user: req.user.id });
     if (!wallet) {
       return res.status(404).json({ success: false, message: 'Wallet not found.' });
     }
@@ -119,7 +119,7 @@ const topUp = async (req, res, next) => {
     // Record transaction
     const transaction = await Transaction.record({
       walletId: wallet._id,
-      userId: req.user._id,
+      userId: req.user.id,
       type: 'topup',
       amount,
       balanceAfter: wallet.balance,
@@ -129,28 +129,11 @@ const topUp = async (req, res, next) => {
     });
 
     // Notify user
-    await Notification.send({
-      recipient: req.user._id,
+    await Notification.create({
+      recipient: req.user.id,
       title: '💳 Wallet Topped Up',
       message: `PKR ${amount.toLocaleString()} has been added to your wallet. New balance: PKR ${wallet.balance.toLocaleString()}.`,
-      type: 'wallet_credited',
-      metadata: { amount, previousBalance, newBalance: wallet.balance },
-    });
-
-    return res.status(200).json({
-      success: true,
-      message: `PKR ${amount.toLocaleString()} credited to your wallet successfully.`,
-      previousBalance,
-      newBalance: wallet.balance,
-      availableBalance: wallet.availableBalance,
-      transaction: {
-        id: transaction._id,
-        type: transaction.type,
-        amount: transaction.amount,
-        direction: transaction.direction,
-        balanceAfter: transaction.balanceAfter,
-        createdAt: transaction.createdAt,
-      },
+      type: 'general',
     });
   } catch (error) {
     next(error);
@@ -175,7 +158,7 @@ const withdraw = async (req, res, next) => {
 
     const { amount, description, bankAccountDetails } = req.body;
 
-    const wallet = await Wallet.findOne({ user: req.user._id });
+    const wallet = await Wallet.findOne({ user: req.user.id });
     if (!wallet) {
       return res.status(404).json({ success: false, message: 'Wallet not found.' });
     }
@@ -214,7 +197,7 @@ const withdraw = async (req, res, next) => {
     // Record transaction
     const transaction = await Transaction.record({
       walletId: wallet._id,
-      userId: req.user._id,
+      userId: req.user.id,
       type: 'withdrawal',
       amount,
       balanceAfter: wallet.balance,
@@ -224,28 +207,11 @@ const withdraw = async (req, res, next) => {
     });
 
     // Notify user
-    await Notification.send({
-      recipient: req.user._id,
+    await Notification.create({
+      recipient: req.user.id,
       title: '🏦 Withdrawal Processed',
       message: `PKR ${amount.toLocaleString()} withdrawal has been processed. Remaining balance: PKR ${wallet.balance.toLocaleString()}.${bankAccountDetails?.accountNumber ? ` To account: ****${bankAccountDetails.accountNumber.slice(-4)}.` : ''}`,
-      type: 'wallet_debited',
-      metadata: { amount, previousBalance, newBalance: wallet.balance },
-    });
-
-    return res.status(200).json({
-      success: true,
-      message: `PKR ${amount.toLocaleString()} withdrawal processed successfully.`,
-      previousBalance,
-      newBalance: wallet.balance,
-      availableBalance: wallet.availableBalance,
-      transaction: {
-        id: transaction._id,
-        type: transaction.type,
-        amount: transaction.amount,
-        direction: transaction.direction,
-        balanceAfter: transaction.balanceAfter,
-        createdAt: transaction.createdAt,
-      },
+      type: 'general',
     });
   } catch (error) {
     next(error);

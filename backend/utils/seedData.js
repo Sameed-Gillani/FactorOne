@@ -1,64 +1,109 @@
+const mongoose = require('mongoose');
+require('dotenv').config();
+
+const User = require('../models/User');
+const Wallet = require('../models/Wallet');
 const MockFBR = require('../models/MockFBR');
 const MockCreditScore = require('../models/MockCreditScore');
 
-/**
- * seedMockData
- *
- * Seeds MockFBR and MockCreditScore collections with sample data.
- * Uses upsert (updateOne with upsert:true) so it is idempotent —
- * safe to call on every server start without creating duplicates.
- */
-const seedMockData = async () => {
+const mockFBRData = [
+  { ntn: '1234567', businessName: 'Tariq Packaging Pvt Ltd', gstStatus: 'Active' },
+  { ntn: '7654321', businessName: 'Sana Textiles Ltd',       gstStatus: 'Active' },
+  { ntn: '9876543', businessName: 'Karimi Logistics',        gstStatus: 'Active' },
+  { ntn: '1111111', businessName: 'Tech Solutions PK',       gstStatus: 'Inactive' },
+  { ntn: '2222222', businessName: 'Faisal Foods Inc',        gstStatus: 'Active' },
+];
+
+const mockCreditData = [
+  { companyName: 'Packages Limited',   creditScore: 'Good',    remarks: 'Blue-chip FMCG anchor. Consistent 60-day payment cycle.' },
+  { companyName: 'Engro Corporation',  creditScore: 'Good',    remarks: 'Large diversified conglomerate. Reliable payment history.' },
+  { companyName: 'Unilever Pakistan',  creditScore: 'Good',    remarks: 'Multinational FMCG. Excellent payment record.' },
+  { companyName: 'Pakistan Tobacco',   creditScore: 'Average', remarks: 'Moderate creditworthiness. Some delayed payments on record.' },
+  { companyName: 'Kohinoor Textile',   creditScore: 'Average', remarks: 'Mid-tier textile exporter. Payments mostly on time.' },
+  { companyName: 'Maple Leaf Cement',  creditScore: 'Poor',    remarks: 'Cement sector facing liquidity constraints.' },
+];
+
+async function seed() {
   try {
-    // ── Seed MockFBR ─────────────────────────────────────────
-    const fbrData = MockFBR.SEED_DATA;
-    let fbrInserted = 0;
-    let fbrSkipped = 0;
+    await mongoose.connect(process.env.MONGO_URI);
+    console.log('Connected to MongoDB');
 
-    for (const record of fbrData) {
-      const result = await MockFBR.updateOne(
-        { ntn: record.ntn },
-        { $setOnInsert: record },
-        { upsert: true }
-      );
-      if (result.upsertedCount > 0) {
-        fbrInserted++;
-      } else {
-        fbrSkipped++;
-      }
+    // Seed MockFBR
+    await MockFBR.deleteMany({});
+    await MockFBR.insertMany(mockFBRData);
+    console.log('MockFBR seeded:', mockFBRData.length, 'records');
+
+    // Seed MockCreditScore
+    await MockCreditScore.deleteMany({});
+    await MockCreditScore.insertMany(mockCreditData);
+    console.log('MockCreditScore seeded:', mockCreditData.length, 'records');
+
+    // Create admin user
+    const existingAdmin = await User.findOne({ email: 'admin@factorone.pk' });
+    if (!existingAdmin) {
+      const admin = await User.create({
+        name: 'FactorOne Admin',
+        email: 'admin@factorone.pk',
+        password: 'Admin@123',
+        role: 'admin',
+        status: 'active',
+        phone: '03001234567',
+        cnic: '3520100000001',
+      });
+      await Wallet.create({ user: admin._id, balance: 0 });
+      console.log('Admin user created: admin@factorone.pk / Admin@123');
+    } else {
+      console.log('Admin already exists');
     }
 
-    console.log(
-      `📋  MockFBR seed: ${fbrInserted} inserted, ${fbrSkipped} already exist.`
-    );
-
-    // ── Seed MockCreditScore ─────────────────────────────────
-    const creditData = MockCreditScore.SEED_DATA;
-    let creditInserted = 0;
-    let creditSkipped = 0;
-
-    for (const record of creditData) {
-      const result = await MockCreditScore.updateOne(
-        { companyName: record.companyName },
-        { $setOnInsert: record },
-        { upsert: true }
-      );
-      if (result.upsertedCount > 0) {
-        creditInserted++;
-      } else {
-        creditSkipped++;
-      }
+    // Demo SME
+    const existingSME = await User.findOne({ email: 'sme@factorone.pk' });
+    if (!existingSME) {
+      const sme = await User.create({
+        name: 'Tariq Mehmood',
+        email: 'sme@factorone.pk',
+        password: 'Sme@12345',
+        role: 'sme',
+        status: 'active',
+        phone: '03211234567',
+        cnic: '3520100000002',
+        businessName: 'Tariq Packaging Pvt Ltd',
+        ntn: '1234567',
+        sector: 'FMCG',
+      });
+      await Wallet.create({ user: sme._id, balance: 500000 });
+      console.log('Demo SME created: sme@factorone.pk / Sme@12345');
     }
 
-    console.log(
-      `📊  MockCreditScore seed: ${creditInserted} inserted, ${creditSkipped} already exist.`
-    );
+    // Demo Investor
+    const existingInvestor = await User.findOne({ email: 'investor@factorone.pk' });
+    if (!existingInvestor) {
+      const investor = await User.create({
+        name: 'Sana Rizvi',
+        email: 'investor@factorone.pk',
+        password: 'Investor@123',
+        role: 'investor',
+        status: 'active',
+        phone: '03111234567',
+        cnic: '4220100000003',
+        city: 'Karachi',
+        experienceLevel: 'Intermediate',
+      });
+      await Wallet.create({ user: investor._id, balance: 1000000 });
+      console.log('Demo Investor created: investor@factorone.pk / Investor@123');
+    }
 
-    console.log('✅  Mock data seeding complete.');
-  } catch (error) {
-    console.error('❌  Mock data seeding failed:', error.message);
-    // Non-fatal — don't crash the server if seeding fails
+    console.log('\nSeed complete!');
+    console.log('─────────────────────────────────');
+    console.log('Admin:    admin@factorone.pk    / Admin@123');
+    console.log('SME:      sme@factorone.pk      / Sme@12345');
+    console.log('Investor: investor@factorone.pk / Investor@123');
+    console.log('─────────────────────────────────');
+    process.exit(0);
+  } catch (err) {
+    console.error('Seed failed:', err);
+    process.exit(1);
   }
-};
+}
 
-module.exports = seedMockData;
+seed();

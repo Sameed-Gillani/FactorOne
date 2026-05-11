@@ -3,7 +3,6 @@ import { Link, useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
 import { useAuth } from "../../context/AuthContext";
 
-// ── Icons ─────────────────────────────────────────────────────
 const EyeIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} className="w-4 h-4">
     <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z" /><circle cx={12} cy={12} r={3} />
@@ -46,7 +45,7 @@ const SME_SECTORS = [
   "IT & Software", "Healthcare & Pharma", "Agriculture & Farming",
   "Logistics & Transport", "Manufacturing", "Retail & Wholesale", "Other",
 ];
-const EXPERIENCE_LEVELS = ["Beginner (< 1 year)", "Intermediate (1–3 years)", "Experienced (3–7 years)", "Expert (7+ years)"];
+const EXPERIENCE_LEVELS = ["Beginner (< 1 year)", "Intermediate (1-3 years)", "Experienced (3-7 years)", "Expert (7+ years)"];
 const PK_CITIES = [
   "Karachi", "Lahore", "Islamabad", "Rawalpindi", "Faisalabad",
   "Multan", "Peshawar", "Quetta", "Sialkot", "Gujranwala", "Hyderabad", "Other",
@@ -59,7 +58,6 @@ const INITIAL_FORM = {
   city: "", experienceLevel: "",
 };
 
-// ── Step indicator ────────────────────────────────────────────
 const StepDot = ({ step, current, label }) => (
   <div className="flex flex-col items-center gap-1.5">
     <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold transition-all duration-300
@@ -74,7 +72,6 @@ const StepLine = ({ active }) => (
   <div className={`flex-1 h-0.5 mb-5 transition-all duration-500 ${active ? "bg-accent/60" : "bg-navy-700"}`} />
 );
 
-// ── Field wrapper ─────────────────────────────────────────────
 const Field = ({ label, error, children }) => (
   <div>
     {label && <span className="label">{label}</span>}
@@ -83,7 +80,6 @@ const Field = ({ label, error, children }) => (
   </div>
 );
 
-// ── Input with optional icon ──────────────────────────────────
 const Input = ({ icon, error, ...props }) => (
   <div className="relative">
     {icon && <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500">{icon}</span>}
@@ -94,7 +90,6 @@ const Input = ({ icon, error, ...props }) => (
   </div>
 );
 
-// ── Select ────────────────────────────────────────────────────
 const Select = ({ error, children, ...props }) => (
   <select
     {...props}
@@ -108,7 +103,7 @@ export default function RegisterPage() {
   const { register } = useAuth();
   const navigate = useNavigate();
 
-  const [step, setStep] = useState(1);         // 1 = role, 2 = form, 3 = success
+  const [step, setStep] = useState(1);
   const [form, setForm] = useState(INITIAL_FORM);
   const [showPwd, setShowPwd] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
@@ -121,28 +116,23 @@ export default function RegisterPage() {
     if (errors[field]) setErrors((p) => ({ ...p, [field]: "" }));
   };
 
-  // ── Validation ───────────────────────────────────────────────
+  // role shown in UI is "sme" but we send "borrower" to backend
+  const backendRole = form.role === "sme" ? "borrower" : form.role;
+
   const validateStep2 = () => {
     const e = {};
     if (!form.name.trim()) e.name = "Full name is required";
     if (!form.email.trim()) e.email = "Email is required";
     else if (!/^\S+@\S+\.\S+$/.test(form.email)) e.email = "Enter a valid email";
     if (!form.phone.trim()) e.phone = "Phone number is required";
-    else if (!/^(\+92|0092|0)?[3][0-9]{9}$/.test(form.phone)) e.phone = "Enter a valid Pakistani number (03XXXXXXXXX)";
-    if (!form.cnic.trim()) e.cnic = "CNIC is required";
-    else if (!/^\d{5}-\d{7}-\d{1}$/.test(form.cnic)) e.cnic = "Format: XXXXX-XXXXXXX-X";
     if (!form.password) e.password = "Password is required";
     else if (form.password.length < 8) e.password = "Min 8 characters";
-    else if (!/[A-Z]/.test(form.password)) e.password = "Must include an uppercase letter";
-    else if (!/[0-9]/.test(form.password)) e.password = "Must include a number";
-    else if (!/[@$!%*?&#^()_\-+=]/.test(form.password)) e.password = "Must include a special character";
     if (!form.confirmPassword) e.confirmPassword = "Please confirm your password";
     else if (form.password !== form.confirmPassword) e.confirmPassword = "Passwords do not match";
 
     if (form.role === "sme") {
       if (!form.businessName.trim()) e.businessName = "Business name is required";
       if (!form.ntn.trim()) e.ntn = "NTN is required";
-      else if (!/^\d{7}$/.test(form.ntn)) e.ntn = "NTN must be 7 digits";
       if (!form.sector) e.sector = "Please select a sector";
     }
     if (form.role === "investor") {
@@ -160,24 +150,38 @@ export default function RegisterPage() {
 
     setLoading(true);
     try {
+      const nameParts = form.name.trim().split(" ");
+      const firstName = nameParts[0] || "";
+      const lastName = nameParts.slice(1).join(" ") || firstName;
+
       const payload = {
-        name: form.name.trim(),
+        firstName,
+        lastName,
         email: form.email.trim().toLowerCase(),
         phone: form.phone.trim(),
-        cnic: form.cnic.trim(),
         password: form.password,
-        role: form.role,
+        role: backendRole, // ← sends "borrower" or "investor" to backend
         ...(form.role === "sme" && {
           businessName: form.businessName.trim(),
           ntn: form.ntn.trim(),
+          sector: form.sector,
         }),
         ...(form.role === "investor" && {
           city: form.city,
+          experienceLevel: form.experienceLevel,
         }),
       };
 
-      await register(payload);
-      setStep(3);
+      const user = await register(payload);
+
+      // redirect based on actual role returned from backend
+      if (user.role === "investor") {
+        navigate("/investor/dashboard");
+      } else if (user.role === "borrower") {
+        navigate("/sme/dashboard");
+      } else {
+        setStep(3);
+      }
     } catch (err) {
       const data = err.response?.data;
       if (data?.errors) {
@@ -193,14 +197,11 @@ export default function RegisterPage() {
     }
   };
 
-  // ── STEP 1: Role Selection ───────────────────────────────────
   if (step === 1) {
     return (
       <div className="min-h-screen bg-navy-900 bg-grid-pattern bg-grid flex items-center justify-center px-4 py-16 relative overflow-hidden">
         <div className="absolute inset-0 bg-hero-glow pointer-events-none" />
-
         <div className="relative w-full max-w-2xl animate-slide-up">
-          {/* Brand */}
           <div className="text-center mb-10">
             <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-accent/10 border border-accent/20 mb-5 shadow-glow-sm">
               <svg className="w-7 h-7 text-accent" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
@@ -211,26 +212,17 @@ export default function RegisterPage() {
             <h1 className="font-display text-3xl text-white">Factor<span className="text-accent">One</span></h1>
             <p className="text-slate-500 text-sm mt-1.5">Join the marketplace</p>
           </div>
-
           <div className="card gradient-border p-8">
             <h2 className="text-xl font-semibold text-white text-center mb-2">Create your account</h2>
             <p className="text-slate-500 text-sm text-center mb-8">Choose your role to get started</p>
-
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-              {/* SME Card */}
-              <button
-                onClick={() => { setForm((p) => ({ ...p, role: "sme" })); setStep(2); }}
-                className="group relative p-7 rounded-2xl border-2 border-navy-600 bg-navy-900
-                           hover:border-accent hover:bg-accent/5 hover:shadow-glow
-                           transition-all duration-300 text-left cursor-pointer"
-              >
+              <button onClick={() => { setForm((p) => ({ ...p, role: "sme" })); setStep(2); }}
+                className="group relative p-7 rounded-2xl border-2 border-navy-600 bg-navy-900 hover:border-accent hover:bg-accent/5 hover:shadow-glow transition-all duration-300 text-left cursor-pointer">
                 <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-blue-500/10 border border-blue-500/20 text-accent mb-5 group-hover:scale-110 transition-transform duration-300">
                   <BuildingIcon />
                 </div>
                 <h3 className="text-lg font-semibold text-white mb-2">SME / Business</h3>
-                <p className="text-slate-500 text-sm leading-relaxed">
-                  Submit invoices for early payment. Get funded in days, not months.
-                </p>
+                <p className="text-slate-500 text-sm leading-relaxed">Submit invoices for early payment. Get funded in days, not months.</p>
                 <ul className="mt-4 space-y-1.5">
                   {["Submit invoices for discounting", "Track funding in real-time", "Manage your business wallet"].map((item) => (
                     <li key={item} className="flex items-center gap-2 text-xs text-slate-400">
@@ -239,27 +231,14 @@ export default function RegisterPage() {
                     </li>
                   ))}
                 </ul>
-                <div className="absolute bottom-5 right-5 text-slate-600 group-hover:text-accent transition-colors">
-                  <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-                    <path d="M5 12h14M12 5l7 7-7 7" />
-                  </svg>
-                </div>
               </button>
-
-              {/* Investor Card */}
-              <button
-                onClick={() => { setForm((p) => ({ ...p, role: "investor" })); setStep(2); }}
-                className="group relative p-7 rounded-2xl border-2 border-navy-600 bg-navy-900
-                           hover:border-emerald-500 hover:bg-emerald-500/5 hover:shadow-[0_0_40px_rgba(16,185,129,0.15)]
-                           transition-all duration-300 text-left cursor-pointer"
-              >
+              <button onClick={() => { setForm((p) => ({ ...p, role: "investor" })); setStep(2); }}
+                className="group relative p-7 rounded-2xl border-2 border-navy-600 bg-navy-900 hover:border-emerald-500 hover:bg-emerald-500/5 transition-all duration-300 text-left cursor-pointer">
                 <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 mb-5 group-hover:scale-110 transition-transform duration-300">
                   <TrendingIcon />
                 </div>
                 <h3 className="text-lg font-semibold text-white mb-2">Investor</h3>
-                <p className="text-slate-500 text-sm leading-relaxed">
-                  Earn superior returns by funding verified SME invoices.
-                </p>
+                <p className="text-slate-500 text-sm leading-relaxed">Earn superior returns by funding verified SME invoices.</p>
                 <ul className="mt-4 space-y-1.5">
                   {["Browse verified invoices", "Earn up to 3% monthly return", "Full portfolio dashboard"].map((item) => (
                     <li key={item} className="flex items-center gap-2 text-xs text-slate-400">
@@ -268,14 +247,8 @@ export default function RegisterPage() {
                     </li>
                   ))}
                 </ul>
-                <div className="absolute bottom-5 right-5 text-slate-600 group-hover:text-emerald-400 transition-colors">
-                  <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-                    <path d="M5 12h14M12 5l7 7-7 7" />
-                  </svg>
-                </div>
               </button>
             </div>
-
             <p className="text-center text-sm text-slate-500 mt-7">
               Already have an account?{" "}
               <Link to="/login" className="text-accent hover:text-accent-light font-semibold transition-colors">Sign in</Link>
@@ -286,7 +259,6 @@ export default function RegisterPage() {
     );
   }
 
-  // ── STEP 3: Pending Approval Screen ─────────────────────────
   if (step === 3) {
     return (
       <div className="min-h-screen bg-navy-900 bg-grid-pattern bg-grid flex items-center justify-center px-4 relative overflow-hidden">
@@ -297,48 +269,23 @@ export default function RegisterPage() {
               <ClockIcon />
             </div>
             <h2 className="font-display text-3xl text-white mb-3">Application Received!</h2>
-            <p className="text-slate-400 leading-relaxed text-sm mb-2">
-              Thank you for registering with <strong className="text-white">FactorOne</strong>.
-            </p>
             <p className="text-slate-400 leading-relaxed text-sm mb-8">
-              Your account is currently <span className="badge badge-yellow">Pending Review</span>. Our team will verify your details within <strong className="text-white">1–2 business days</strong>.
+              Your account is pending review. Our team will verify your details within 1-2 business days.
             </p>
-            <div className="space-y-3 text-left mb-8 bg-navy-900 rounded-xl p-4 border border-navy-600">
-              {[
-                ["Account", form.name],
-                ["Email", form.email],
-                ["Role", form.role === "sme" ? "SME / Business" : "Investor"],
-              ].map(([k, v]) => (
-                <div key={k} className="flex justify-between text-sm">
-                  <span className="text-slate-500">{k}</span>
-                  <span className="text-slate-200 font-medium">{v}</span>
-                </div>
-              ))}
-            </div>
-            <p className="text-xs text-slate-600 mb-6">
-              You'll receive an email notification once your account is approved.
-            </p>
-            <button onClick={() => navigate("/login")} className="btn-primary w-full">
-              Back to Sign In
-            </button>
+            <button onClick={() => navigate("/login")} className="btn-primary w-full">Back to Sign In</button>
           </div>
         </div>
       </div>
     );
   }
 
-  // ── STEP 2: Registration Form ────────────────────────────────
   return (
     <div className="min-h-screen bg-navy-900 bg-grid-pattern bg-grid px-4 py-10 relative overflow-hidden">
       <div className="absolute inset-0 bg-hero-glow pointer-events-none" />
-
       <div className="relative w-full max-w-2xl mx-auto animate-fade-in">
-        {/* Brand */}
         <div className="text-center mb-8">
           <h1 className="font-display text-2xl text-white">Factor<span className="text-accent">One</span></h1>
         </div>
-
-        {/* Step indicator */}
         <div className="flex items-center mb-8 px-4">
           <StepDot step={1} current={step} label="Role" />
           <StepLine active={step >= 2} />
@@ -346,111 +293,46 @@ export default function RegisterPage() {
           <StepLine active={step >= 3} />
           <StepDot step={3} current={step} label="Done" />
         </div>
-
         <div className="card gradient-border p-8">
-          {/* Header */}
           <div className="flex items-center gap-3 mb-7">
             <button onClick={() => setStep(1)} className="w-8 h-8 rounded-lg bg-navy-700 hover:bg-navy-600 flex items-center justify-center text-slate-400 hover:text-white transition-all">
-              <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-                <path d="M19 12H5M12 5l-7 7 7 7" />
-              </svg>
+              <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}><path d="M19 12H5M12 5l-7 7 7 7" /></svg>
             </button>
             <div>
-              <h2 className="text-xl font-semibold text-white">
-                {form.role === "sme" ? "SME Registration" : "Investor Registration"}
-              </h2>
+              <h2 className="text-xl font-semibold text-white">{form.role === "sme" ? "SME Registration" : "Investor Registration"}</h2>
               <p className="text-slate-500 text-xs mt-0.5">Fill in your details to create your account</p>
             </div>
-            <span className={`ml-auto badge ${form.role === "sme" ? "badge-blue" : "badge-green"}`}>
-              {form.role === "sme" ? "SME" : "Investor"}
-            </span>
+            <span className={`ml-auto badge ${form.role === "sme" ? "badge-blue" : "badge-green"}`}>{form.role === "sme" ? "SME" : "Investor"}</span>
           </div>
-
           <form onSubmit={handleSubmit} noValidate>
-            {/* ── Common Fields ─────────────────────────────── */}
             <div className="mb-6">
               <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-4 flex items-center gap-2">
                 <span className="w-4 h-px bg-slate-600" />Personal Information<span className="flex-1 h-px bg-slate-600" />
               </h3>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <Field label="Full Name" error={errors.name}>
-                  <Input
-                    type="text" name="name" value={form.name} onChange={set("name")}
-                    placeholder="Muhammad Ali" autoComplete="name" error={errors.name}
-                  />
+                  <Input type="text" name="name" value={form.name} onChange={set("name")} placeholder="Muhammad Ali" autoComplete="name" error={errors.name} />
                 </Field>
                 <Field label="Email Address" error={errors.email}>
-                  <Input
-                    type="email" name="email" value={form.email} onChange={set("email")}
-                    placeholder="ali@company.com" autoComplete="email" error={errors.email}
-                  />
+                  <Input type="email" name="email" value={form.email} onChange={set("email")} placeholder="ali@company.com" autoComplete="email" error={errors.email} />
                 </Field>
                 <Field label="Phone Number" error={errors.phone}>
-                  <Input
-                    type="tel" name="phone" value={form.phone} onChange={set("phone")}
-                    placeholder="03001234567" autoComplete="tel" error={errors.phone}
-                  />
+                  <Input type="tel" name="phone" value={form.phone} onChange={set("phone")} placeholder="03001234567" autoComplete="tel" error={errors.phone} />
                 </Field>
-                <Field label="CNIC" error={errors.cnic}>
-                  <Input
-                    type="text" name="cnic" value={form.cnic} onChange={set("cnic")}
-                    placeholder="XXXXX-XXXXXXX-X" maxLength={15} error={errors.cnic}
-                  />
-                </Field>
-              </div>
-            </div>
-
-            {/* ── Password Fields ───────────────────────────── */}
-            <div className="mb-6">
-              <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-4 flex items-center gap-2">
-                <span className="w-4 h-px bg-slate-600" />Security<span className="flex-1 h-px bg-slate-600" />
-              </h3>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <Field label="Password" error={errors.password}>
                   <div className="relative">
-                    <input
-                      type={showPwd ? "text" : "password"} name="password"
-                      value={form.password} onChange={set("password")}
-                      placeholder="Min 8 characters" autoComplete="new-password"
-                      className={`input-field pr-11 ${errors.password ? "border-danger" : ""}`}
-                    />
-                    <button type="button" onClick={() => setShowPwd((p) => !p)}
-                      className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 transition-colors" tabIndex={-1}>
-                      {showPwd ? <EyeOffIcon /> : <EyeIcon />}
-                    </button>
+                    <input type={showPwd ? "text" : "password"} name="password" value={form.password} onChange={set("password")} placeholder="Min 8 characters" autoComplete="new-password" className={`input-field pr-11 ${errors.password ? "border-danger" : ""}`} />
+                    <button type="button" onClick={() => setShowPwd((p) => !p)} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 transition-colors" tabIndex={-1}>{showPwd ? <EyeOffIcon /> : <EyeIcon />}</button>
                   </div>
                 </Field>
                 <Field label="Confirm Password" error={errors.confirmPassword}>
                   <div className="relative">
-                    <input
-                      type={showConfirm ? "text" : "password"} name="confirmPassword"
-                      value={form.confirmPassword} onChange={set("confirmPassword")}
-                      placeholder="Repeat password" autoComplete="new-password"
-                      className={`input-field pr-11 ${errors.confirmPassword ? "border-danger" : ""}`}
-                    />
-                    <button type="button" onClick={() => setShowConfirm((p) => !p)}
-                      className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 transition-colors" tabIndex={-1}>
-                      {showConfirm ? <EyeOffIcon /> : <EyeIcon />}
-                    </button>
+                    <input type={showConfirm ? "text" : "password"} name="confirmPassword" value={form.confirmPassword} onChange={set("confirmPassword")} placeholder="Repeat password" autoComplete="new-password" className={`input-field pr-11 ${errors.confirmPassword ? "border-danger" : ""}`} />
+                    <button type="button" onClick={() => setShowConfirm((p) => !p)} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 transition-colors" tabIndex={-1}>{showConfirm ? <EyeOffIcon /> : <EyeIcon />}</button>
                   </div>
                 </Field>
               </div>
-              {/* Password strength hint */}
-              {form.password && (
-                <div className="flex gap-1.5 mt-2.5">
-                  {[
-                    form.password.length >= 8,
-                    /[A-Z]/.test(form.password),
-                    /[0-9]/.test(form.password),
-                    /[@$!%*?&#^()_\-+=]/.test(form.password),
-                  ].map((ok, i) => (
-                    <div key={i} className={`flex-1 h-1 rounded-full transition-all duration-300 ${ok ? "bg-accent" : "bg-navy-600"}`} />
-                  ))}
-                </div>
-              )}
             </div>
-
-            {/* ── SME-specific fields ──────────────────────── */}
             {form.role === "sme" && (
               <div className="mb-6">
                 <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-4 flex items-center gap-2">
@@ -459,29 +341,21 @@ export default function RegisterPage() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="sm:col-span-2">
                     <Field label="Business / Company Name" error={errors.businessName}>
-                      <Input
-                        type="text" value={form.businessName} onChange={set("businessName")}
-                        placeholder="Pak Textile Mills Ltd" error={errors.businessName}
-                      />
+                      <Input type="text" value={form.businessName} onChange={set("businessName")} placeholder="Pak Textile Mills Ltd" error={errors.businessName} />
                     </Field>
                   </div>
                   <Field label="NTN (7-digit)" error={errors.ntn}>
-                    <Input
-                      type="text" value={form.ntn} onChange={set("ntn")}
-                      placeholder="1234567" maxLength={7} error={errors.ntn}
-                    />
+                    <Input type="text" value={form.ntn} onChange={set("ntn")} placeholder="1234567" maxLength={7} error={errors.ntn} />
                   </Field>
                   <Field label="Business Sector" error={errors.sector}>
                     <Select value={form.sector} onChange={set("sector")} error={errors.sector}>
-                      <option value="">Select sector…</option>
+                      <option value="">Select sector...</option>
                       {SME_SECTORS.map((s) => <option key={s} value={s}>{s}</option>)}
                     </Select>
                   </Field>
                 </div>
               </div>
             )}
-
-            {/* ── Investor-specific fields ─────────────────── */}
             {form.role === "investor" && (
               <div className="mb-6">
                 <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-4 flex items-center gap-2">
@@ -490,40 +364,27 @@ export default function RegisterPage() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <Field label="City" error={errors.city}>
                     <Select value={form.city} onChange={set("city")} error={errors.city}>
-                      <option value="">Select city…</option>
+                      <option value="">Select city...</option>
                       {PK_CITIES.map((c) => <option key={c} value={c}>{c}</option>)}
                     </Select>
                   </Field>
                   <Field label="Investment Experience" error={errors.experienceLevel}>
                     <Select value={form.experienceLevel} onChange={set("experienceLevel")} error={errors.experienceLevel}>
-                      <option value="">Select level…</option>
+                      <option value="">Select level...</option>
                       {EXPERIENCE_LEVELS.map((l) => <option key={l} value={l}>{l}</option>)}
                     </Select>
                   </Field>
                 </div>
               </div>
             )}
-
-            {/* ── Submit ───────────────────────────────────── */}
             <div className="flex flex-col sm:flex-row gap-3 pt-2">
-              <button type="button" onClick={() => setStep(1)} className="btn-secondary sm:w-auto">
-                ← Back
-              </button>
+              <button type="button" onClick={() => setStep(1)} className="btn-secondary sm:w-auto">← Back</button>
               <button type="submit" disabled={loading} className="btn-primary flex-1">
-                {loading ? (
-                  <><span className="w-4 h-4 rounded-full border-2 border-white/30 border-t-white animate-spin" />Creating account…</>
-                ) : (
-                  "Create Account →"
-                )}
+                {loading ? "Creating account…" : "Create Account"}
               </button>
             </div>
           </form>
         </div>
-
-        <p className="text-center text-sm text-slate-500 mt-5">
-          Already have an account?{" "}
-          <Link to="/login" className="text-accent hover:text-accent-light font-semibold transition-colors">Sign in</Link>
-        </p>
       </div>
     </div>
   );
