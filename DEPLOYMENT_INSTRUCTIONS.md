@@ -101,6 +101,6 @@ Run `npm run seed` again from the Render shell to make sure demo accounts exist 
 
 ## Final URLs to Share
 
-- Frontend: your Vercel URL
-- Backend API: your Render URL + `/api`
+- Frontend: https://factor-one-five.vercel.app
+- Backend API: https://factorone-backend.onrender.com/api
 - GitHub: https://github.com/Sameed-Gillani/FactorOne
